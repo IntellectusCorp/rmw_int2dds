@@ -1,0 +1,38 @@
+# Build directories
+build/
+install/
+log/
+
+# int2dds-ffi library is now provided by the int2dds_ffi_vendor package;
+# the legacy manually-copied lib/ directory is no longer used by the build.
+lib/
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# CMake
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+
+# Compiled binaries
+*.exe
+*.dll
+*.so
+*.dylib
+*.a
+*.lib
+*.o
+*.obj
+
+.claude/
+.serena/
