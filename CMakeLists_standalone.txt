@@ -1,0 +1,49 @@
+# Standalone build test - syntax check only (no ROS2 dependencies)
+cmake_minimum_required(VERSION 3.14)
+project(rmw_int2dds_cpp_standalone)
+
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+# Windows specific
+if(WIN32)
+  add_compile_definitions(_CRT_SECURE_NO_WARNINGS)
+  set(INT2DDS_FFI_LIB ${CMAKE_CURRENT_SOURCE_DIR}/lib/int2dds_ffi.lib)
+  set(PLATFORM_LIBS ws2_32 ntdll userenv iphlpapi)
+endif()
+
+# Create stub headers for ROS2 types (syntax check only)
+file(MAKE_DIRECTORY ${CMAKE_BINARY_DIR}/stub_include/rmw)
+file(MAKE_DIRECTORY ${CMAKE_BINARY_DIR}/stub_include/rcutils)
+file(MAKE_DIRECTORY ${CMAKE_BINARY_DIR}/stub_include/rosidl_runtime_c)
+file(MAKE_DIRECTORY ${CMAKE_BINARY_DIR}/stub_include/rosidl_runtime_cpp)
+file(MAKE_DIRECTORY ${CMAKE_BINARY_DIR}/stub_include/rosidl_typesupport_introspection_c)
+file(MAKE_DIRECTORY ${CMAKE_BINARY_DIR}/stub_include/rosidl_typesupport_introspection_cpp)
+file(MAKE_DIRECTORY ${CMAKE_BINARY_DIR}/stub_include/rosidl_typesupport_c)
+file(MAKE_DIRECTORY ${CMAKE_BINARY_DIR}/stub_include/rosidl_typesupport_cpp)
+
+# Just compile graph_cache and test_connection for now
+add_library(graph_cache_test STATIC
+  src/graph/graph_cache.cpp
+)
+
+target_include_directories(graph_cache_test PUBLIC
+  ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+# Test connection (already works standalone)
+add_executable(test_connection src/test_connection.cpp)
+target_include_directories(test_connection PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(test_connection ${INT2DDS_FFI_LIB} ${PLATFORM_LIBS})
+
+# Copy DLL
+if(WIN32)
+  add_custom_command(TARGET test_connection POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+    ${CMAKE_CURRENT_SOURCE_DIR}/lib/int2dds_ffi.dll
+    $<TARGET_FILE_DIR:test_connection>)
+endif()
+
+message(STATUS "Standalone build test configured")
+message(STATUS "  - graph_cache: syntax check")
+message(STATUS "  - test_connection: full build")

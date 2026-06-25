@@ -1,0 +1,15 @@
+# Minimal Doxyfile for rmw_int2dds_cpp.
+# rosdoc2 consumes Doxygen XML output and integrates it through breathe/exhale.
+PROJECT_NAME           = "rmw_int2dds_cpp"
+OUTPUT_DIRECTORY       = generated/doxygen
+INPUT                  = ../include ../src
+FILE_PATTERNS          = *.hpp *.h *.cpp
+RECURSIVE              = YES
+GENERATE_HTML          = NO
+GENERATE_LATEX         = NO
+GENERATE_XML           = YES
+XML_OUTPUT             = xml
+EXTRACT_ALL            = YES
+EXTRACT_STATIC         = YES
+QUIET                  = YES
+WARN_IF_UNDOCUMENTED   = NO
