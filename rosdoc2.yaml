@@ -1,0 +1,28 @@
+## rosdoc2 configuration for rmw_int2dds_cpp.
+## Format: two YAML documents separated by '---' (rosdoc2 requirement);
+## the first self-documents the file type/version, the second is the config.
+type: 'rosdoc2 config'
+version: 1
+
+---
+
+settings:
+    generate_package_index: true
+builders:
+    - doxygen: {
+        name: 'rmw_int2dds_cpp Public C/C++ API',
+        output_dir: 'generated/doxygen',
+        ## The vendored FFI header is not part of this package's public API and
+        ## its C array-pointer signatures are not resolvable by breathe/exhale.
+        extra_doxyfile_statements: [
+            'EXCLUDE_PATTERNS = */int2dds-ffi.h'
+        ]
+    }
+    - sphinx: {
+        name: 'rmw_int2dds_cpp',
+        ## Use the in-repo Sphinx project (doc/conf.py) as the landing page.
+        sphinx_sourcedir: 'doc',
+        ## Wire the Doxygen XML into breathe/exhale for C++ API pages.
+        doxygen_xml_directory: 'generated/doxygen/xml',
+        output_dir: ''
+    }

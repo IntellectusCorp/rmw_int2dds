@@ -1,0 +1,702 @@
+// Copyright 2024 Int2DDS Project
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+#include <cstring>
+#include <atomic>
+#include <chrono>
+#include <cstdio>
+#include <cstdlib>
+#include <vector>
+
+#include "rmw/rmw.h"
+#include "rmw/error_handling.h"
+
+#if __has_include("rmw/events_statuses/incompatible_type.h")
+#define RMW_INT2DDS_HAS_INCOMPATIBLE_TYPE_EVENT 1
+#include "rmw/events_statuses/incompatible_type.h"
+#endif
+
+#include "int2dds-ffi.h"
+#include "rmw_int2dds_cpp/identifier.hpp"
+#include "rmw_int2dds_cpp/types.hpp"
+
+namespace
+{
+
+struct WaitProfile
+{
+  std::atomic<uint64_t> count{0};
+  std::atomic<uint64_t> ok_count{0};
+  std::atomic<uint64_t> timeout_count{0};
+  std::atomic<uint64_t> total_us{0};
+  std::atomic<uint64_t> attach_us{0};
+  std::atomic<uint64_t> wait_us{0};
+  std::atomic<uint64_t> detach_us{0};
+  std::atomic<uint64_t> ready_us{0};
+};
+
+WaitProfile g_wait_profile;
+
+bool
+profile_enabled()
+{
+  return std::getenv("RMW_INT2DDS_PROFILE") != nullptr;
+}
+
+uint64_t
+elapsed_us(
+  const std::chrono::steady_clock::time_point & start,
+  const std::chrono::steady_clock::time_point & end)
+{
+  return static_cast<uint64_t>(
+    std::chrono::duration_cast<std::chrono::microseconds>(end - start).count());
+}
+
+void
+record_wait_profile(
+  uint64_t attach_us,
+  uint64_t wait_us,
+  uint64_t detach_us,
+  uint64_t ready_us,
+  uint64_t total_us,
+  Int2DdsRet wait_ret)
+{
+  const uint64_t n = g_wait_profile.count.fetch_add(1, std::memory_order_relaxed) + 1;
+  if (wait_ret == INT2DDS_RET_OK) {
+    g_wait_profile.ok_count.fetch_add(1, std::memory_order_relaxed);
+  } else if (wait_ret == INT2DDS_RET_TIMEOUT) {
+    g_wait_profile.timeout_count.fetch_add(1, std::memory_order_relaxed);
+  }
+  g_wait_profile.attach_us.fetch_add(attach_us, std::memory_order_relaxed);
+  g_wait_profile.wait_us.fetch_add(wait_us, std::memory_order_relaxed);
+  g_wait_profile.detach_us.fetch_add(detach_us, std::memory_order_relaxed);
+  g_wait_profile.ready_us.fetch_add(ready_us, std::memory_order_relaxed);
+  g_wait_profile.total_us.fetch_add(total_us, std::memory_order_relaxed);
+
+  if (n % 300 == 0) {
+    const double divisor = static_cast<double>(n);
+    std::fprintf(
+      stderr,
+      "RMW_INT2DDS_WAIT_PROFILE count=%lu ok=%lu timeout=%lu total_avg_us=%.3f attach_avg_us=%.3f wait_avg_us=%.3f detach_avg_us=%.3f ready_avg_us=%.3f\n",
+      n,
+      g_wait_profile.ok_count.load(std::memory_order_relaxed),
+      g_wait_profile.timeout_count.load(std::memory_order_relaxed),
+      static_cast<double>(g_wait_profile.total_us.load(std::memory_order_relaxed)) / divisor,
+      static_cast<double>(g_wait_profile.attach_us.load(std::memory_order_relaxed)) / divisor,
+      static_cast<double>(g_wait_profile.wait_us.load(std::memory_order_relaxed)) / divisor,
+      static_cast<double>(g_wait_profile.detach_us.load(std::memory_order_relaxed)) / divisor,
+      static_cast<double>(g_wait_profile.ready_us.load(std::memory_order_relaxed)) / divisor);
+  }
+}
+
+uint32_t
+event_type_to_status_mask(rmw_event_type_t event_type)
+{
+  switch (event_type) {
+    case RMW_EVENT_LIVELINESS_LOST:
+      return INT2DDS_STATUS_LIVELINESS_LOST;
+    case RMW_EVENT_OFFERED_DEADLINE_MISSED:
+      return INT2DDS_STATUS_OFFERED_DEADLINE_MISSED;
+    case RMW_EVENT_OFFERED_QOS_INCOMPATIBLE:
+      return INT2DDS_STATUS_OFFERED_INCOMPATIBLE_QOS;
+#ifdef RMW_INT2DDS_HAS_INCOMPATIBLE_TYPE_EVENT
+    case RMW_EVENT_PUBLISHER_INCOMPATIBLE_TYPE:
+      return INT2DDS_STATUS_OFFERED_INCOMPATIBLE_TYPE;
+#endif
+#ifdef RMW_EVENT_PUBLICATION_MATCHED
+    case RMW_EVENT_PUBLICATION_MATCHED:
+      return INT2DDS_STATUS_PUBLICATION_MATCHED;
+#endif
+    case RMW_EVENT_LIVELINESS_CHANGED:
+      return INT2DDS_STATUS_LIVELINESS_CHANGED;
+    case RMW_EVENT_REQUESTED_DEADLINE_MISSED:
+      return INT2DDS_STATUS_REQUESTED_DEADLINE_MISSED;
+    case RMW_EVENT_REQUESTED_QOS_INCOMPATIBLE:
+      return INT2DDS_STATUS_REQUESTED_INCOMPATIBLE_QOS;
+#ifdef RMW_INT2DDS_HAS_INCOMPATIBLE_TYPE_EVENT
+    case RMW_EVENT_SUBSCRIPTION_INCOMPATIBLE_TYPE:
+      return INT2DDS_STATUS_REQUESTED_INCOMPATIBLE_TYPE;
+#endif
+    case RMW_EVENT_MESSAGE_LOST:
+      return INT2DDS_STATUS_SAMPLE_LOST;
+#ifdef RMW_EVENT_SUBSCRIPTION_MATCHED
+    case RMW_EVENT_SUBSCRIPTION_MATCHED:
+      return INT2DDS_STATUS_SUBSCRIPTION_MATCHED;
+#endif
+    default:
+      return 0;
+  }
+}
+
+/// Convert RMW timeout to nanoseconds
+/// Returns -1 for infinite wait, 0 for poll, positive for actual timeout
+int64_t
+convert_timeout_to_ns(const rmw_time_t * wait_timeout)
+{
+  if (wait_timeout == nullptr) {
+    return -1;  // Infinite wait
+  }
+
+  if (wait_timeout->sec == 0 && wait_timeout->nsec == 0) {
+    return 0;  // Poll (no wait)
+  }
+
+  // Nanosecond resolution: int2dds_waitset_wait_ns honors sub-millisecond
+  // timeouts, so an rcl timer's exact deadline is observed without rounding up
+  // (rounding up made sub-ms timers fire one period early).
+  if (wait_timeout->sec >= INT64_MAX / 1000000000 - 1) {
+    return -1;  // Effectively infinite; avoid overflow
+  }
+  return static_cast<int64_t>(wait_timeout->sec) * 1000000000 +
+         static_cast<int64_t>(wait_timeout->nsec);
+}
+
+/// Check if a subscription has data available
+bool
+subscription_has_data(const rmw_int2dds_cpp::SubscriptionData * sub_data)
+{
+  if (sub_data == nullptr || sub_data->datareader == nullptr) {
+    return false;
+  }
+  bool has_cached_data = false;
+  Int2DdsRet cache_ret = int2dds_datareader_has_data(
+    sub_data->datareader, &has_cached_data);
+  if (cache_ret == INT2DDS_RET_OK && has_cached_data) {
+    return true;
+  }
+  return false;
+}
+
+/// Check if a guard condition is triggered
+bool
+guard_condition_is_triggered(const rmw_int2dds_cpp::GuardConditionData * gc_data)
+{
+  if (gc_data == nullptr || gc_data->guard_condition == nullptr) {
+    return false;
+  }
+
+  bool triggered = false;
+  Int2DdsRet ret = int2dds_guard_condition_get_trigger_value(gc_data->guard_condition, &triggered);
+  if (ret != INT2DDS_RET_OK) {
+    return false;
+  }
+
+  // Reset trigger value after checking (like taking the trigger)
+  if (triggered) {
+    int2dds_guard_condition_set_trigger_value(gc_data->guard_condition, false);
+  }
+
+  return triggered;
+}
+
+/// Check if a service has a request available
+bool
+service_has_request(const rmw_int2dds_cpp::ServiceData * srv_data)
+{
+  if (srv_data == nullptr || srv_data->request_reader == nullptr) {
+    return false;
+  }
+  bool has_cached_data = false;
+  Int2DdsRet cache_ret = int2dds_datareader_has_data(
+    srv_data->request_reader, &has_cached_data);
+  if (cache_ret == INT2DDS_RET_OK && has_cached_data) {
+    return true;
+  }
+  return false;
+}
+
+/// Check if a client has a response available
+bool
+client_has_response(const rmw_int2dds_cpp::ClientData * cli_data)
+{
+  if (cli_data == nullptr || cli_data->response_reader == nullptr) {
+    return false;
+  }
+  bool has_cached_data = false;
+  Int2DdsRet cache_ret = int2dds_datareader_has_data(
+    cli_data->response_reader, &has_cached_data);
+  if (cache_ret == INT2DDS_RET_OK && has_cached_data) {
+    return true;
+  }
+  return false;
+}
+
+/// Check if an event status condition is triggered
+bool
+event_is_triggered(const rmw_event_t * event)
+{
+  auto * event_data = static_cast<rmw_int2dds_cpp::EventData *>(event->data);
+  if (event_data == nullptr) {
+    return false;
+  }
+
+  uint32_t target_mask = event_type_to_status_mask(event_data->event_type);
+  if (target_mask == 0) {
+    return false;
+  }
+
+  uint32_t status_changes = 0;
+  Int2DdsRet ret = INT2DDS_RET_ERROR;
+  if (event_data->is_publisher) {
+    auto * pub_data = static_cast<rmw_int2dds_cpp::PublisherData *>(event_data->entity_data);
+    if (pub_data == nullptr || pub_data->datawriter == nullptr) {
+      return false;
+    }
+    ret = int2dds_datawriter_get_status_changes(pub_data->datawriter, &status_changes);
+  } else {
+    auto * sub_data = static_cast<rmw_int2dds_cpp::SubscriptionData *>(event_data->entity_data);
+    if (sub_data == nullptr || sub_data->datareader == nullptr) {
+      return false;
+    }
+    ret = int2dds_datareader_get_status_changes(sub_data->datareader, &status_changes);
+  }
+
+  return ret == INT2DDS_RET_OK && (status_changes & target_mask) != 0;
+}
+
+bool
+ensure_status_condition_mask(
+  Int2DdsDataReader * datareader,
+  Int2DdsStatusCondition ** cached_status_condition,
+  uint32_t required_mask)
+{
+  if (datareader == nullptr || cached_status_condition == nullptr) {
+    return false;
+  }
+
+  if (*cached_status_condition == nullptr) {
+    Int2DdsRet ret = int2dds_datareader_get_statuscondition(datareader, cached_status_condition);
+    if (ret != INT2DDS_RET_OK) {
+      return false;
+    }
+    ret = int2dds_statuscondition_set_enabled_statuses(*cached_status_condition, 0u);
+    if (ret != INT2DDS_RET_OK) {
+      return false;
+    }
+  }
+
+  uint32_t enabled_mask = 0;
+  Int2DdsRet ret = int2dds_statuscondition_get_enabled_statuses(
+    *cached_status_condition, &enabled_mask);
+  if (ret != INT2DDS_RET_OK) {
+    return false;
+  }
+
+  if ((enabled_mask & required_mask) == required_mask) {
+    return true;
+  }
+
+  ret = int2dds_statuscondition_set_enabled_statuses(
+    *cached_status_condition, enabled_mask | required_mask);
+  return ret == INT2DDS_RET_OK;
+}
+
+Int2DdsStatusCondition *
+refresh_event_status_condition(rmw_int2dds_cpp::EventData * event_data)
+{
+  if (event_data == nullptr) {
+    return nullptr;
+  }
+
+  Int2DdsStatusCondition * status_condition = nullptr;
+  Int2DdsRet ret = INT2DDS_RET_ERROR;
+  if (event_data->is_publisher) {
+    auto * pub_data = static_cast<rmw_int2dds_cpp::PublisherData *>(event_data->entity_data);
+    if (pub_data == nullptr || pub_data->datawriter == nullptr) {
+      return nullptr;
+    }
+    ret = int2dds_datawriter_get_statuscondition(pub_data->datawriter, &status_condition);
+  } else {
+    auto * sub_data = static_cast<rmw_int2dds_cpp::SubscriptionData *>(event_data->entity_data);
+    if (sub_data == nullptr || sub_data->datareader == nullptr) {
+      return nullptr;
+    }
+    ret = int2dds_datareader_get_statuscondition(sub_data->datareader, &status_condition);
+    if (ret == INT2DDS_RET_OK) {
+      sub_data->status_condition = status_condition;
+    }
+  }
+
+  if (ret != INT2DDS_RET_OK || status_condition == nullptr) {
+    return nullptr;
+  }
+
+  uint32_t status_mask = event_type_to_status_mask(event_data->event_type);
+  if (status_mask == 0) {
+    return nullptr;
+  }
+
+  uint32_t enabled_mask = 0;
+  if (
+    int2dds_statuscondition_get_enabled_statuses(status_condition, &enabled_mask) != INT2DDS_RET_OK)
+  {
+    return nullptr;
+  }
+
+  if (
+    int2dds_statuscondition_set_enabled_statuses(
+      status_condition, enabled_mask | status_mask) != INT2DDS_RET_OK)
+  {
+    return nullptr;
+  }
+
+  event_data->status_condition = status_condition;
+  return status_condition;
+}
+
+}  // namespace
+
+extern "C"
+{
+
+rmw_ret_t
+rmw_wait(
+  rmw_subscriptions_t * subscriptions,
+  rmw_guard_conditions_t * guard_conditions,
+  rmw_services_t * services,
+  rmw_clients_t * clients,
+  rmw_events_t * events,
+  rmw_wait_set_t * wait_set,
+  const rmw_time_t * wait_timeout)
+{
+  const bool profile = profile_enabled();
+  const auto total_t0 = std::chrono::steady_clock::now();
+  auto attach_t0 = total_t0;
+  uint64_t attach_elapsed_us = 0;
+  uint64_t wait_elapsed_us = 0;
+  uint64_t detach_elapsed_us = 0;
+  uint64_t ready_elapsed_us = 0;
+
+  RMW_CHECK_ARGUMENT_FOR_NULL(wait_set, RMW_RET_INVALID_ARGUMENT);
+
+  if (wait_set->implementation_identifier != rmw_int2dds_cpp::implementation_identifier) {
+    RMW_SET_ERROR_MSG("wait set not from this implementation");
+    return RMW_RET_INCORRECT_RMW_IMPLEMENTATION;
+  }
+
+  auto * ws_data = static_cast<rmw_int2dds_cpp::WaitSetData *>(wait_set->data);
+  if (ws_data == nullptr || ws_data->waitset == nullptr) {
+    RMW_SET_ERROR_MSG("wait set data is null");
+    return RMW_RET_ERROR;
+  }
+
+  // Track attached entities for cleanup
+  std::vector<Int2DdsStatusCondition *> attached_reader_conditions;
+  std::vector<Int2DdsGuardCondition *> attached_guards;
+  std::vector<Int2DdsStatusCondition *> attached_event_conditions;
+
+  // Attach subscriptions
+  if (subscriptions != nullptr) {
+    for (size_t i = 0; i < subscriptions->subscriber_count; ++i) {
+      if (subscriptions->subscribers[i] != nullptr) {
+        auto * sub_data =
+          static_cast<rmw_int2dds_cpp::SubscriptionData *>(subscriptions->subscribers[i]);
+        if (sub_data != nullptr && sub_data->datareader != nullptr) {
+          bool ready = ensure_status_condition_mask(
+            sub_data->datareader, &sub_data->status_condition, INT2DDS_STATUS_DATA_AVAILABLE);
+          Int2DdsRet ret = ready && sub_data->status_condition != nullptr ?
+            int2dds_waitset_attach_condition(ws_data->waitset, sub_data->status_condition) :
+            INT2DDS_RET_ERROR;
+          if (ret == INT2DDS_RET_OK) {
+            attached_reader_conditions.push_back(sub_data->status_condition);
+          }
+        }
+      }
+    }
+  }
+
+  // Attach guard conditions
+  if (guard_conditions != nullptr) {
+    for (size_t i = 0; i < guard_conditions->guard_condition_count; ++i) {
+      if (guard_conditions->guard_conditions[i] != nullptr) {
+        auto * gc_data =
+          static_cast<rmw_int2dds_cpp::GuardConditionData *>(guard_conditions->guard_conditions[i]);
+        if (gc_data != nullptr && gc_data->guard_condition != nullptr) {
+          Int2DdsRet ret = int2dds_waitset_attach_guard_condition(
+            ws_data->waitset, gc_data->guard_condition);
+          if (ret == INT2DDS_RET_OK) {
+            attached_guards.push_back(gc_data->guard_condition);
+          }
+        }
+      }
+    }
+  }
+
+  // Attach services (request readers)
+  if (services != nullptr) {
+    for (size_t i = 0; i < services->service_count; ++i) {
+      if (services->services[i] != nullptr) {
+        auto * srv_data = static_cast<rmw_int2dds_cpp::ServiceData *>(services->services[i]);
+        if (srv_data != nullptr && srv_data->request_reader != nullptr) {
+          bool ready = ensure_status_condition_mask(
+            srv_data->request_reader,
+            &srv_data->request_status_condition,
+            INT2DDS_STATUS_DATA_AVAILABLE);
+          Int2DdsRet ret = ready && srv_data->request_status_condition != nullptr ?
+            int2dds_waitset_attach_condition(
+            ws_data->waitset, srv_data->request_status_condition) :
+            INT2DDS_RET_ERROR;
+          if (ret == INT2DDS_RET_OK) {
+            attached_reader_conditions.push_back(srv_data->request_status_condition);
+          }
+        }
+      }
+    }
+  }
+
+  // Attach clients (response readers)
+  if (clients != nullptr) {
+    for (size_t i = 0; i < clients->client_count; ++i) {
+      if (clients->clients[i] != nullptr) {
+        auto * cli_data = static_cast<rmw_int2dds_cpp::ClientData *>(clients->clients[i]);
+        if (cli_data != nullptr && cli_data->response_reader != nullptr) {
+          bool ready = ensure_status_condition_mask(
+            cli_data->response_reader,
+            &cli_data->response_status_condition,
+            INT2DDS_STATUS_DATA_AVAILABLE);
+          Int2DdsRet ret = ready && cli_data->response_status_condition != nullptr ?
+            int2dds_waitset_attach_condition(
+            ws_data->waitset, cli_data->response_status_condition) :
+            INT2DDS_RET_ERROR;
+          if (ret == INT2DDS_RET_OK) {
+            attached_reader_conditions.push_back(cli_data->response_status_condition);
+          }
+        }
+      }
+    }
+  }
+
+  // Attach events (status conditions)
+  if (events != nullptr) {
+    for (size_t i = 0; i < events->event_count; ++i) {
+      if (events->events[i] != nullptr) {
+        auto * event = static_cast<rmw_event_t *>(events->events[i]);
+        if (event->implementation_identifier != rmw_int2dds_cpp::implementation_identifier) {
+          continue;
+        }
+        auto * event_data = static_cast<rmw_int2dds_cpp::EventData *>(event->data);
+        Int2DdsStatusCondition * status_condition = refresh_event_status_condition(event_data);
+        if (status_condition != nullptr) {
+          Int2DdsRet ret = int2dds_waitset_attach_condition(
+            ws_data->waitset, status_condition);
+          if (ret == INT2DDS_RET_OK) {
+            attached_event_conditions.push_back(status_condition);
+          }
+        }
+      }
+    }
+  }
+
+  // Convert timeout
+  int64_t timeout_ns = convert_timeout_to_ns(wait_timeout);
+  if (profile) {
+    attach_elapsed_us = elapsed_us(attach_t0, std::chrono::steady_clock::now());
+  }
+  const auto wait_t0 = std::chrono::steady_clock::now();
+  bool data_already_ready = false;
+  if (subscriptions != nullptr) {
+    for (size_t i = 0; i < subscriptions->subscriber_count; ++i) {
+      if (subscriptions->subscribers[i] != nullptr) {
+        auto * sub_data =
+          static_cast<rmw_int2dds_cpp::SubscriptionData *>(subscriptions->subscribers[i]);
+        if (subscription_has_data(sub_data)) {
+          data_already_ready = true;
+          break;
+        }
+      }
+    }
+  }
+  if (!data_already_ready && services != nullptr) {
+    for (size_t i = 0; i < services->service_count; ++i) {
+      if (services->services[i] != nullptr) {
+        auto * srv_data = static_cast<rmw_int2dds_cpp::ServiceData *>(services->services[i]);
+        if (service_has_request(srv_data)) {
+          data_already_ready = true;
+          break;
+        }
+      }
+    }
+  }
+  if (!data_already_ready && clients != nullptr) {
+    for (size_t i = 0; i < clients->client_count; ++i) {
+      if (clients->clients[i] != nullptr) {
+        auto * cli_data = static_cast<rmw_int2dds_cpp::ClientData *>(clients->clients[i]);
+        if (client_has_response(cli_data)) {
+          data_already_ready = true;
+          break;
+        }
+      }
+    }
+  }
+  if (!data_already_ready && events != nullptr) {
+    for (size_t i = 0; i < events->event_count; ++i) {
+      if (events->events[i] != nullptr) {
+        auto * event = static_cast<rmw_event_t *>(events->events[i]);
+        if (event->implementation_identifier == rmw_int2dds_cpp::implementation_identifier &&
+          event_is_triggered(event))
+        {
+          data_already_ready = true;
+          break;
+        }
+      }
+    }
+  }
+
+  Int2DdsRet wait_ret = data_already_ready ?
+    INT2DDS_RET_OK :
+    int2dds_waitset_wait_ns(ws_data->waitset, timeout_ns);
+  if (profile) {
+    wait_elapsed_us = elapsed_us(wait_t0, std::chrono::steady_clock::now());
+  }
+
+  // Detach all entities (cleanup)
+  const auto detach_t0 = std::chrono::steady_clock::now();
+  for (auto * condition : attached_reader_conditions) {
+    int2dds_waitset_detach_condition(ws_data->waitset, condition);
+  }
+  for (auto * guard : attached_guards) {
+    int2dds_waitset_detach_guard_condition(ws_data->waitset, guard);
+  }
+  for (auto * condition : attached_event_conditions) {
+    int2dds_waitset_detach_condition(ws_data->waitset, condition);
+  }
+  if (profile) {
+    detach_elapsed_us = elapsed_us(detach_t0, std::chrono::steady_clock::now());
+  }
+
+  // Check for timeout
+  if (wait_ret == INT2DDS_RET_TIMEOUT) {
+    // Nullify all entries - nothing was triggered
+    if (subscriptions != nullptr) {
+      for (size_t i = 0; i < subscriptions->subscriber_count; ++i) {
+        subscriptions->subscribers[i] = nullptr;
+      }
+    }
+    if (guard_conditions != nullptr) {
+      for (size_t i = 0; i < guard_conditions->guard_condition_count; ++i) {
+        guard_conditions->guard_conditions[i] = nullptr;
+      }
+    }
+    if (services != nullptr) {
+      for (size_t i = 0; i < services->service_count; ++i) {
+        services->services[i] = nullptr;
+      }
+    }
+    if (clients != nullptr) {
+      for (size_t i = 0; i < clients->client_count; ++i) {
+        clients->clients[i] = nullptr;
+      }
+    }
+    if (events != nullptr) {
+      for (size_t i = 0; i < events->event_count; ++i) {
+        events->events[i] = nullptr;
+      }
+    }
+    if (profile) {
+      record_wait_profile(
+        attach_elapsed_us, wait_elapsed_us, detach_elapsed_us, 0,
+        elapsed_us(total_t0, std::chrono::steady_clock::now()), wait_ret);
+    }
+    return RMW_RET_TIMEOUT;
+  }
+
+  if (wait_ret != INT2DDS_RET_OK) {
+    if (profile) {
+      record_wait_profile(
+        attach_elapsed_us, wait_elapsed_us, detach_elapsed_us, 0,
+        elapsed_us(total_t0, std::chrono::steady_clock::now()), wait_ret);
+    }
+    RMW_SET_ERROR_MSG("wait failed");
+    return RMW_RET_ERROR;
+  }
+
+  // Check which entities have data/are triggered
+  // Nullify entries that don't have data
+
+  // Check subscriptions
+  const auto ready_t0 = std::chrono::steady_clock::now();
+  if (subscriptions != nullptr) {
+    for (size_t i = 0; i < subscriptions->subscriber_count; ++i) {
+      if (subscriptions->subscribers[i] != nullptr) {
+        auto * sub_data =
+          static_cast<rmw_int2dds_cpp::SubscriptionData *>(subscriptions->subscribers[i]);
+        bool has_data = subscription_has_data(sub_data);
+        if (!has_data) {
+          subscriptions->subscribers[i] = nullptr;
+        }
+      }
+    }
+  }
+
+  // Check guard conditions
+  if (guard_conditions != nullptr) {
+    for (size_t i = 0; i < guard_conditions->guard_condition_count; ++i) {
+      if (guard_conditions->guard_conditions[i] != nullptr) {
+        auto * gc_data =
+          static_cast<rmw_int2dds_cpp::GuardConditionData *>(guard_conditions->guard_conditions[i]);
+        if (!guard_condition_is_triggered(gc_data)) {
+          guard_conditions->guard_conditions[i] = nullptr;
+        }
+      }
+    }
+  }
+
+  // Check services
+  if (services != nullptr) {
+    for (size_t i = 0; i < services->service_count; ++i) {
+      if (services->services[i] != nullptr) {
+        auto * srv_data = static_cast<rmw_int2dds_cpp::ServiceData *>(services->services[i]);
+        if (!service_has_request(srv_data)) {
+          services->services[i] = nullptr;
+        }
+      }
+    }
+  }
+
+  // Check clients
+  if (clients != nullptr) {
+    for (size_t i = 0; i < clients->client_count; ++i) {
+      if (clients->clients[i] != nullptr) {
+        auto * cli_data = static_cast<rmw_int2dds_cpp::ClientData *>(clients->clients[i]);
+        if (!client_has_response(cli_data)) {
+          clients->clients[i] = nullptr;
+        }
+      }
+    }
+  }
+
+  if (events != nullptr) {
+    for (size_t i = 0; i < events->event_count; ++i) {
+      if (events->events[i] != nullptr) {
+        auto * event = static_cast<rmw_event_t *>(events->events[i]);
+        if (event->implementation_identifier != rmw_int2dds_cpp::implementation_identifier ||
+          !event_is_triggered(event))
+        {
+          events->events[i] = nullptr;
+        }
+      }
+    }
+  }
+
+  if (profile) {
+    ready_elapsed_us = elapsed_us(ready_t0, std::chrono::steady_clock::now());
+    record_wait_profile(
+      attach_elapsed_us, wait_elapsed_us, detach_elapsed_us, ready_elapsed_us,
+      elapsed_us(total_t0, std::chrono::steady_clock::now()), wait_ret);
+  }
+
+  return RMW_RET_OK;
+}
+
+}  // extern "C"
