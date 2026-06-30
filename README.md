@@ -69,12 +69,14 @@ official ROS 2 repositories (`rmw_implementation`, `system_tests`).
 | `test_rmw_implementation` (RMW conformance gate) | 16/16 | 15/15 (full set; `test_event` exists on Jazzy only) |
 | `test_communication` same-RMW | 30/30 | 29/29 |
 | `test_quality_of_service` | 4/4 | 3/3 (full set; `best_available` is Iron+) |
-| `test_rclcpp` | 31/31 | 27/27 |
+| `test_rclcpp` | 27/27 | 27/27 |
 | Cross-vendor pub/sub vs `rmw_fastrtps_cpp` | 8/8 | 8/8 |
 | Cross-vendor pub/sub vs `rmw_cyclonedds_cpp` | 8/8 | 8/8 |
-| In-repo QoS demos (deadline/durability/history/lifespan/liveliness) | all pass | — |
-| `rosdoc2 build` | pass | — |
-| `ament_lint` suite | 283 tests, 0 failures | — |
+| `test_cli_remapping` | 1/1 | 1/1 |
+| `test_security` | 6/6 | 6/6 |
+| In-repo QoS demos (deadline/durability/history/lifespan/liveliness) | all pass | all pass |
+| `rosdoc2 build` | pass | pass |
+| `ament_lint` suite | 242 tests, 0 failures | 238 tests, 0 failures |
 
 Cross-vendor service/action combinations are skipped upstream for **all**
 vendor pairs and are therefore not part of the cross-vendor scope.
