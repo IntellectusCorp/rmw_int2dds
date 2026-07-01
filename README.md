@@ -34,15 +34,21 @@ int2DDS as its middleware via `RMW_IMPLEMENTATION=rmw_int2dds_cpp`.
 ## Quick Start
 
 ```bash
-# 1) Build in your ROS 2 workspace
+# 1) Get the sources into your ROS 2 workspace
+mkdir -p ~/ros2_ws/src && cd ~/ros2_ws/src
+git clone -b humble https://github.com/IntellectusCorp/rmw_int2dds_cpp.git
+git clone https://github.com/IntellectusCorp/int2dds_ffi_vendor.git
+
+# 2) Build
 cd ~/ros2_ws
+source /opt/ros/humble/setup.bash
 colcon build --packages-up-to rmw_int2dds_cpp
 source install/setup.bash
 
-# 2) Select int2DDS as the middleware
+# 3) Select int2DDS as the middleware
 export RMW_IMPLEMENTATION=rmw_int2dds_cpp
 
-# 3) Run any ROS 2 demo
+# 4) Run any ROS 2 demo
 ros2 run demo_nodes_cpp talker
 # in another terminal (same RMW_IMPLEMENTATION):
 ros2 run demo_nodes_cpp listener
