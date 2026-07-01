@@ -36,7 +36,7 @@ int2DDS as its middleware via `RMW_IMPLEMENTATION=rmw_int2dds_cpp`.
 ```bash
 # 1) Get the sources into your ROS 2 workspace
 mkdir -p ~/ros2_ws/src && cd ~/ros2_ws/src
-git clone -b rolling https://github.com/IntellectusCorp/rmw_int2dds_cpp.git
+git clone -b rolling https://github.com/IntellectusCorp/rmw_int2dds.git
 git clone https://github.com/IntellectusCorp/int2dds_ffi_vendor.git
 
 # 2) Build
