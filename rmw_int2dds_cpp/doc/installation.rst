@@ -18,7 +18,7 @@ Build from source
 .. code-block:: bash
 
    mkdir -p ~/ros2_ws/src && cd ~/ros2_ws/src
-   git clone https://github.com/IntellectusCorp/rmw_int2dds_cpp.git
+   git clone https://github.com/IntellectusCorp/rmw_int2dds.git
 
    cd ~/ros2_ws
    rosdep install --from-paths src --ignore-src -r -y

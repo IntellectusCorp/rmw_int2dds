@@ -12,8 +12,8 @@
 
   <license>Apache-2.0</license>
 
-  <url type="repository">https://github.com/IntellectusCorp/rmw_int2dds_cpp</url>
-  <url type="bugtracker">https://github.com/IntellectusCorp/rmw_int2dds_cpp/issues</url>
+  <url type="repository">https://github.com/IntellectusCorp/rmw_int2dds</url>
+  <url type="bugtracker">https://github.com/IntellectusCorp/rmw_int2dds/issues</url>
   <url type="website">https://github.com/IntellectusCorp/int2DDS</url>
 
   <author email="int2dds@int2.us">Intellectus Corp.</author>
