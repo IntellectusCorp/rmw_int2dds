@@ -34,15 +34,21 @@ int2DDS as its middleware via `RMW_IMPLEMENTATION=rmw_int2dds_cpp`.
 ## Quick Start
 
 ```bash
-# 1) Build in your ROS 2 workspace
+# 1) Get the sources into your ROS 2 workspace
+mkdir -p ~/ros2_ws/src && cd ~/ros2_ws/src
+git clone -b jazzy https://github.com/IntellectusCorp/rmw_int2dds_cpp.git
+git clone https://github.com/IntellectusCorp/int2dds_ffi_vendor.git
+
+# 2) Build
 cd ~/ros2_ws
+source /opt/ros/jazzy/setup.bash
 colcon build --packages-up-to rmw_int2dds_cpp
 source install/setup.bash
 
-# 2) Select int2DDS as the middleware
+# 3) Select int2DDS as the middleware
 export RMW_IMPLEMENTATION=rmw_int2dds_cpp
 
-# 3) Run any ROS 2 demo
+# 4) Run any ROS 2 demo
 ros2 run demo_nodes_cpp talker
 # in another terminal (same RMW_IMPLEMENTATION):
 ros2 run demo_nodes_cpp listener
@@ -51,12 +57,10 @@ ros2 run demo_nodes_cpp listener
 ## Middleware library dependency
 
 This package links against the closed-source **int2DDS FFI library**
-(`libint2dds_ffi.so` and `int2dds-ffi.h`), which is **not** included in this
-repository. Place the library under `lib/` and the header under `include/`
-before building (both paths are gitignored). Distribution through a `rosdep`
-key and binary packages is planned; until then the library is provided by
-Intellectus Corp. (int2dds@int2.us). The int2DDS core itself is scheduled to
-be open-sourced.
+(`libint2dds_ffi.so*` and `int2dds-ffi.h`), which is provided by the
+`int2dds_ffi_vendor` package. The vendor package downloads the release
+artifact, verifies the selected library against the manifest, and exports the
+`int2dds_ffi::int2dds_ffi` CMake target used by this RMW package.
 
 ## Test status
 
@@ -83,15 +87,11 @@ vendor pairs and are therefore not part of the cross-vendor scope.
 
 ## Known issues
 
-- A full-stack run of the `rcl` / `rclcpp` / `rclpy` / `ros2cli` test suites
-  (8235 tests, 2026-06-12 baseline) showed 128 failures attributed to this
-  RMW. Fixes for the highest-impact gaps (event callbacks, wait timeout
-  rounding, message-info timestamps, event taking) landed on 2026-06-12; a
-  full re-run after the fixes shows 82 remaining failures, dominated by
-  graph/discovery propagation timing. These are tracked for follow-up.
-- Cross-vendor pub/sub with RTI Connext passes 20/24; the remaining failures
-  are isolated to one large-sample type and are under investigation in the
-  int2DDS core (RTPS fragment retransmission interop).
+- `spin_all_fail_wait_set_clear` (rclcpp): int2DDS delivers same-participant
+  samples asynchronously, so this error-injection robustness test does not
+  observe the mocked wait-set clear within its short (~1 ms) window. No data
+  loss or crash occurs, and this is not an RMW conformance-gate test; it is
+  tracked as a known limitation.
 - DDS-Security (SROS 2) is not supported yet (see `doc/security.rst`).
 - Content-filtered topics are not functional yet.
 
