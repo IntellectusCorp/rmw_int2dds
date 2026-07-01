@@ -1,4 +1,4 @@
-# rmw_int2dds_cpp
+# ROS 2 RMW for int2DDS
 
 <div align="center">
 
@@ -97,11 +97,11 @@ vendor pairs and are therefore not part of the cross-vendor scope.
 
 ## Documentation
 
-- Installation: [doc/installation.rst](doc/installation.rst)
-- Usage: [doc/usage.rst](doc/usage.rst)
-- QoS mapping: [doc/qos_mapping.rst](doc/qos_mapping.rst)
-- Security: [doc/security.rst](doc/security.rst) — **note: DDS-Security / SROS 2 is not supported yet**
-- Examples: [examples/](examples/)
+- Installation: [doc/installation.rst](rmw_int2dds_cpp/doc/installation.rst)
+- Usage: [doc/usage.rst](rmw_int2dds_cpp/doc/usage.rst)
+- QoS mapping: [doc/qos_mapping.rst](rmw_int2dds_cpp/doc/qos_mapping.rst)
+- Security: [doc/security.rst](rmw_int2dds_cpp/doc/security.rst) — **note: DDS-Security / SROS 2 is not supported yet**
+- Examples: [examples/](rmw_int2dds_cpp/examples/)
 - API docs are published at `docs.ros.org/en/{humble,jazzy}/p/rmw_int2dds_cpp/` once released.
 
 ## Contributing
