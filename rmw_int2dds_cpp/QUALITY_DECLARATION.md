@@ -37,7 +37,7 @@ distribution once it has been released into a distribution.
 ### Change Requests / Contributor Origin [2.i, 2.ii]
 
 All changes occur through a pull request. Contributions are accepted under
-the project CLA; see [CONTRIBUTING](CONTRIBUTING.md).
+the project CLA; see [CONTRIBUTING](../CONTRIBUTING.md).
 
 ### Peer Review Policy [2.iii]
 
@@ -64,13 +64,13 @@ docs.ros.org once released.
 
 ### License [3.iii]
 
-The license is Apache 2.0; the full text is in [LICENSE](LICENSE). All source
+The license is Apache 2.0; the full text is in [LICENSE](../LICENSE). All source
 files include a license and copyright header checked by linters.
 
 ### Copyright Statements [3.iv]
 
 Copyright holders are stated in the header of each source file and in
-[NOTICE](NOTICE); enforced via `ament_copyright`.
+[NOTICE](../NOTICE); enforced via `ament_copyright`.
 
 ## Testing [4]
 
@@ -108,12 +108,12 @@ Intellectus Corp. under Apache 2.0.
 
 This package targets the Tier 1 platforms of the targeted ROS distribution as
 defined in [REP-2000](https://www.ros.org/reps/rep-2000.html); verified
-platforms and architectures are listed in the [README](README.md).
+platforms and architectures are listed in the [README](../README.md).
 
 ## Security [7]
 
 ### Vulnerability Disclosure Policy [7.i]
 
 This package conforms to the Vulnerability Disclosure Policy in
-[SECURITY.md](SECURITY.md); vulnerabilities are reported privately to
+[SECURITY.md](../SECURITY.md); vulnerabilities are reported privately to
 int2dds@int2.us.
