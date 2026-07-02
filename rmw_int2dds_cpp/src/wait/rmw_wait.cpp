@@ -308,27 +308,38 @@ refresh_event_status_condition(rmw_int2dds_cpp::EventData * event_data)
     return nullptr;
   }
 
-  Int2DdsStatusCondition * status_condition = nullptr;
-  Int2DdsRet ret = INT2DDS_RET_ERROR;
-  if (event_data->is_publisher) {
-    auto * pub_data = static_cast<rmw_int2dds_cpp::PublisherData *>(event_data->entity_data);
-    if (pub_data == nullptr || pub_data->datawriter == nullptr) {
-      return nullptr;
+  // int2dds_*_get_statuscondition allocates a new FFI handle on every call and
+  // the handle must be released with int2dds_statuscondition_delete. The core
+  // StatusCondition state is shared across handles, so reuse the first handle
+  // instead of leaking one per wait cycle.
+  Int2DdsStatusCondition * status_condition = event_data->status_condition;
+  if (status_condition == nullptr) {
+    Int2DdsRet ret = INT2DDS_RET_ERROR;
+    if (event_data->is_publisher) {
+      auto * pub_data = static_cast<rmw_int2dds_cpp::PublisherData *>(event_data->entity_data);
+      if (pub_data == nullptr || pub_data->datawriter == nullptr) {
+        return nullptr;
+      }
+      ret = int2dds_datawriter_get_statuscondition(pub_data->datawriter, &status_condition);
+    } else {
+      auto * sub_data = static_cast<rmw_int2dds_cpp::SubscriptionData *>(event_data->entity_data);
+      if (sub_data == nullptr || sub_data->datareader == nullptr) {
+        return nullptr;
+      }
+      if (sub_data->status_condition != nullptr) {
+        status_condition = sub_data->status_condition;
+        ret = INT2DDS_RET_OK;
+      } else {
+        ret = int2dds_datareader_get_statuscondition(sub_data->datareader, &status_condition);
+        if (ret == INT2DDS_RET_OK) {
+          sub_data->status_condition = status_condition;
+        }
+      }
     }
-    ret = int2dds_datawriter_get_statuscondition(pub_data->datawriter, &status_condition);
-  } else {
-    auto * sub_data = static_cast<rmw_int2dds_cpp::SubscriptionData *>(event_data->entity_data);
-    if (sub_data == nullptr || sub_data->datareader == nullptr) {
-      return nullptr;
-    }
-    ret = int2dds_datareader_get_statuscondition(sub_data->datareader, &status_condition);
-    if (ret == INT2DDS_RET_OK) {
-      sub_data->status_condition = status_condition;
-    }
-  }
 
-  if (ret != INT2DDS_RET_OK || status_condition == nullptr) {
-    return nullptr;
+    if (ret != INT2DDS_RET_OK || status_condition == nullptr) {
+      return nullptr;
+    }
   }
 
   uint32_t status_mask = event_type_to_status_mask(event_data->event_type);
