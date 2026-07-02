@@ -36,8 +36,10 @@
   <!-- Used by the in-repo validation/probe executables -->
   <depend>std_msgs</depend>
 
-  <!-- Prebuilt int2DDS FFI library (downloaded + exported by the vendor pkg) -->
-  <depend>int2dds_ffi_vendor</depend>
+  <!-- Prebuilt int2DDS FFI library (downloaded + exported by the vendor pkg).
+       Pinned to the same MINOR: FFI is the single product version; rmw and vendor
+       track it and must match on MINOR (0.x ABI boundary). -->
+  <depend version_gte="0.1.0" version_lt="0.2.0">int2dds_ffi_vendor</depend>
 
   <!-- Lint / test -->
   <test_depend>ament_lint_auto</test_depend>

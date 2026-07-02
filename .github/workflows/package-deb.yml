@@ -1,0 +1,77 @@
+# Build per-architecture .deb packages for the int2DDS RMW stack (this branch = humble).
+# Each version branch (jazzy/humble/rolling) carries its own copy of this workflow with
+# ROS_DISTRO set to that branch's distro. amd64/arm64 are required and verified; armhf
+# is best-effort (continue-on-error) — official ros:<distro>-ros-base images ship only
+# for amd64/arm64.
+name: package-deb
+
+on:
+  push:
+    branches: [feature/humble-arch-deb-packaging]
+    tags: ['v*']
+  workflow_dispatch:
+
+env:
+  ROS_DISTRO: humble
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [amd64, arm64, armhf]
+        include:
+          - arch: armhf
+            best_effort: true
+    continue-on-error: ${{ matrix.best_effort == true }}
+    steps:
+      - name: Checkout rmw repo
+        uses: actions/checkout@v4
+        with:
+          path: rmw_int2dds
+
+      # Sibling vendor repo (public) — the default GITHUB_TOKEN suffices, so no
+      # explicit token input. If this repo is ever made private, add
+      # `token: ${{ secrets.INT2DDS_FFI_TOKEN }}` back with a PAT that has read access.
+      - name: Checkout int2dds_ffi_vendor (sibling)
+        uses: actions/checkout@v4
+        with:
+          repository: IntellectusCorp/int2dds_ffi_vendor
+          path: int2dds_ffi_vendor
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Build debs
+        working-directory: rmw_int2dds
+        env:
+          INT2DDS_FFI_TOKEN: ${{ secrets.INT2DDS_FFI_TOKEN }}
+          VENDOR_REPO_PATH: ${{ github.workspace }}/int2dds_ffi_vendor
+        run: bash ./packaging/build-deb.sh "${ROS_DISTRO}" "${{ matrix.arch }}"
+
+      - name: Verify debs (amd64/arm64 only)
+        if: matrix.arch != 'armhf'
+        working-directory: rmw_int2dds
+        run: bash ./packaging/verify-deb.sh "${ROS_DISTRO}" "${{ matrix.arch }}"
+
+      - name: Upload deb artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: deb-${{ env.ROS_DISTRO }}-${{ matrix.arch }}
+          path: rmw_int2dds/dist/${{ env.ROS_DISTRO }}/${{ matrix.arch }}/*.deb
+          if-no-files-found: warn
+
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Download all debs
+        uses: actions/download-artifact@v4
+        with:
+          path: debs
+      - name: Attach debs to the release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: debs/**/*.deb
