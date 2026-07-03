@@ -556,7 +556,10 @@ destroy_subscription_reader_entities(
     return;
   }
 
-  sub_data->status_condition = nullptr;
+  if (sub_data->status_condition != nullptr) {
+    int2dds_statuscondition_delete(sub_data->status_condition);
+    sub_data->status_condition = nullptr;
+  }
 
   if (sub_data->datareader != nullptr) {
     int2dds_delete_datareader(sub_data->datareader);

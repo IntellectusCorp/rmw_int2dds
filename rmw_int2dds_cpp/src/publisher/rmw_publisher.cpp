@@ -683,6 +683,11 @@ rmw_destroy_publisher(rmw_node_t * node, rmw_publisher_t * publisher)
   }
 
   // Delete DDS entities
+  if (pub_data->status_condition != nullptr) {
+    int2dds_statuscondition_delete(pub_data->status_condition);
+    pub_data->status_condition = nullptr;
+  }
+
   if (pub_data->datawriter != nullptr && context_data != nullptr) {
     int2dds_delete_datawriter(pub_data->datawriter);
   }
