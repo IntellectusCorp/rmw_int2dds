@@ -561,7 +561,6 @@ rmw_publisher_event_init(
     return RMW_RET_BAD_ALLOC;
   }
 
-  event_data->status_condition = status_condition;
   event_data->event_type = event_type;
   event_data->entity_data = pub_data;
   event_data->is_publisher = true;
@@ -620,7 +619,6 @@ rmw_subscription_event_init(
     return RMW_RET_BAD_ALLOC;
   }
 
-  event_data->status_condition = status_condition;
   event_data->event_type = event_type;
   event_data->entity_data = sub_data;
   event_data->is_publisher = false;

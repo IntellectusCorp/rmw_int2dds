@@ -597,8 +597,8 @@ test_message_lost_status_condition_mask()
     return false;
   }
 
-  auto * event_data = static_cast<rmw_int2dds_cpp::EventData *>(event.data);
-  if (event_data == nullptr || event_data->status_condition == nullptr) {
+  auto * sub_data = static_cast<rmw_int2dds_cpp::SubscriptionData *>(ctx.subscription->data);
+  if (sub_data == nullptr || sub_data->status_condition == nullptr) {
     std::cerr << "[ERROR] message_lost event has no status condition" << std::endl;
     ignore_ret(rmw_event_fini(&event));
     cleanup_context(ctx);
@@ -607,7 +607,7 @@ test_message_lost_status_condition_mask()
 
   uint32_t enabled_mask = 0;
   const Int2DdsRet ret = int2dds_statuscondition_get_enabled_statuses(
-    event_data->status_condition, &enabled_mask);
+    sub_data->status_condition, &enabled_mask);
   if (ret != INT2DDS_RET_OK) {
     std::cerr << "[ERROR] failed to query message_lost status condition mask ret=" << ret
               << std::endl;
