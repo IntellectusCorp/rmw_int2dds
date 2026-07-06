@@ -308,27 +308,42 @@ refresh_event_status_condition(rmw_int2dds_cpp::EventData * event_data)
     return nullptr;
   }
 
+  // int2dds_*_get_statuscondition allocates a new FFI handle on every call and
+  // the handle must be released with int2dds_statuscondition_delete. Keep
+  // exactly one handle per entity, owned by the entity data and released in
+  // the entity destroy path; events only borrow it. Resolving through the
+  // entity data on every call (instead of caching per event) keeps the borrow
+  // valid when destroy_subscription_reader_entities recreates the reader for a
+  // content-filter update.
   Int2DdsStatusCondition * status_condition = nullptr;
-  Int2DdsRet ret = INT2DDS_RET_ERROR;
   if (event_data->is_publisher) {
     auto * pub_data = static_cast<rmw_int2dds_cpp::PublisherData *>(event_data->entity_data);
     if (pub_data == nullptr || pub_data->datawriter == nullptr) {
       return nullptr;
     }
-    ret = int2dds_datawriter_get_statuscondition(pub_data->datawriter, &status_condition);
+    if (pub_data->status_condition == nullptr) {
+      Int2DdsRet ret =
+        int2dds_datawriter_get_statuscondition(pub_data->datawriter, &status_condition);
+      if (ret != INT2DDS_RET_OK || status_condition == nullptr) {
+        return nullptr;
+      }
+      pub_data->status_condition = status_condition;
+    }
+    status_condition = pub_data->status_condition;
   } else {
     auto * sub_data = static_cast<rmw_int2dds_cpp::SubscriptionData *>(event_data->entity_data);
     if (sub_data == nullptr || sub_data->datareader == nullptr) {
       return nullptr;
     }
-    ret = int2dds_datareader_get_statuscondition(sub_data->datareader, &status_condition);
-    if (ret == INT2DDS_RET_OK) {
+    if (sub_data->status_condition == nullptr) {
+      Int2DdsRet ret =
+        int2dds_datareader_get_statuscondition(sub_data->datareader, &status_condition);
+      if (ret != INT2DDS_RET_OK || status_condition == nullptr) {
+        return nullptr;
+      }
       sub_data->status_condition = status_condition;
     }
-  }
-
-  if (ret != INT2DDS_RET_OK || status_condition == nullptr) {
-    return nullptr;
+    status_condition = sub_data->status_condition;
   }
 
   uint32_t status_mask = event_type_to_status_mask(event_data->event_type);
@@ -350,7 +365,6 @@ refresh_event_status_condition(rmw_int2dds_cpp::EventData * event_data)
     return nullptr;
   }
 
-  event_data->status_condition = status_condition;
   return status_condition;
 }
 

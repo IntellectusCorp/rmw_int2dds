@@ -384,6 +384,10 @@ rmw_destroy_client(rmw_node_t * node, rmw_client_t * client)
     }
 
     // Delete DDS entities
+    if (cli_data->response_status_condition != nullptr) {
+      int2dds_statuscondition_delete(cli_data->response_status_condition);
+      cli_data->response_status_condition = nullptr;
+    }
     if (cli_data->response_reader != nullptr) {
       int2dds_delete_datareader(cli_data->response_reader);
     }
