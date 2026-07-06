@@ -292,8 +292,11 @@ struct ClientData
 /// Event implementation data
 struct EventData
 {
-  // Backing DDS status condition used for wait-set integration.
-  Int2DdsStatusCondition * status_condition{nullptr};
+  // The backing DDS status condition is owned by the entity data
+  // (PublisherData/SubscriptionData::status_condition, released in the entity
+  // destroy path) and resolved on demand instead of being cached here, so a
+  // reader recreated for a content-filter update cannot leave a dangling
+  // alias behind.
   rmw_event_type_t event_type{RMW_EVENT_INVALID};
 
   // Can be publisher or subscription implementation data.
