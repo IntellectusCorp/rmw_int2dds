@@ -390,6 +390,10 @@ rmw_destroy_service(rmw_node_t * node, rmw_service_t * service)
     }
 
     // Delete DDS entities
+    if (srv_data->request_status_condition != nullptr) {
+      int2dds_statuscondition_delete(srv_data->request_status_condition);
+      srv_data->request_status_condition = nullptr;
+    }
     if (srv_data->response_writer != nullptr) {
       int2dds_delete_datawriter(srv_data->response_writer);
     }
