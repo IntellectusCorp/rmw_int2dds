@@ -20,7 +20,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        arch: [amd64, arm64, armhf]
+        arch: [amd64, arm64]
         include:
           - arch: armhf
             best_effort: true
