@@ -54,6 +54,33 @@ ros2 run demo_nodes_cpp talker
 ros2 run demo_nodes_cpp listener
 ```
 
+## Binary install (.deb)
+
+Prebuilt packages let you skip `colcon build`. Download the two `.deb`s for your
+distro + architecture from the
+[Releases](https://github.com/IntellectusCorp/rmw_int2dds/releases) page, then:
+
+```bash
+sudo apt install ./ros-jazzy-int2dds-ffi-vendor_*_amd64.deb \
+                 ./ros-jazzy-rmw-int2dds-cpp_*_amd64.deb
+source /opt/ros/jazzy/setup.bash
+export RMW_IMPLEMENTATION=rmw_int2dds_cpp
+ros2 run demo_nodes_cpp talker
+```
+
+`apt install ./file.deb` installs the file and resolves its dependencies (the rmw
+package pulls in the vendor package automatically). The RMW library and its
+ament-index marker install into `/opt/ros/jazzy/`, so once the environment is
+sourced only `RMW_IMPLEMENTATION` needs to be set.
+
+Supported: **jazzy / humble / rolling** × **amd64 / arm64**.
+**armhf** is best-effort — there are no official ROS 2 armhf apt packages, so an
+armhf `.deb` only works on a system where ROS 2 was itself built from source for
+armhf.
+
+To build the packages yourself: `packaging/build-deb.sh <distro> <arch>` (needs
+Docker; see `packaging/` for the build and verification scripts).
+
 ## Middleware library dependency
 
 This package links against the closed-source **int2DDS FFI library**
