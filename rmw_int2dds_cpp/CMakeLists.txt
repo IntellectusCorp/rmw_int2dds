@@ -1,8 +1,8 @@
 cmake_minimum_required(VERSION 3.14)
 project(rmw_int2dds_cpp)
 
-# C++17 standard
-set(CMAKE_CXX_STANDARD 17)
+# C++20: platform minimum since ROS 2 Kilted (REP 2000); Jazzy toolchains accept it too.
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # The matched-event smoke executable exercises APIs that are not present in
@@ -122,21 +122,20 @@ target_include_directories(rmw_int2dds_cpp PUBLIC
   $<INSTALL_INTERFACE:include>
 )
 
-target_link_libraries(rmw_int2dds_cpp
+# ament_target_dependencies() was removed from ament_cmake in ROS 2 Lyrical;
+# link the modern namespaced targets directly (they carry their include dirs).
+target_link_libraries(rmw_int2dds_cpp PUBLIC
   int2dds_ffi::int2dds_ffi
   ${PLATFORM_LIBS}
-)
-
-ament_target_dependencies(rmw_int2dds_cpp
-  rcutils
-  rmw
-  rosidl_runtime_c
-  rosidl_runtime_cpp
-  rosidl_typesupport_introspection_c
-  rosidl_typesupport_introspection_cpp
-  rosidl_typesupport_c
-  rosidl_typesupport_cpp
-  rmw_dds_common
+  rcutils::rcutils
+  rmw::rmw
+  rosidl_runtime_c::rosidl_runtime_c
+  rosidl_runtime_cpp::rosidl_runtime_cpp
+  rosidl_typesupport_introspection_c::rosidl_typesupport_introspection_c
+  rosidl_typesupport_introspection_cpp::rosidl_typesupport_introspection_cpp
+  rosidl_typesupport_c::rosidl_typesupport_c
+  rosidl_typesupport_cpp::rosidl_typesupport_cpp
+  rmw_dds_common::rmw_dds_common_library
 )
 
 # Configure as RMW library
@@ -158,155 +157,159 @@ target_link_libraries(test_connection int2dds_ffi::int2dds_ffi ${PLATFORM_LIBS})
 if(RMW_INT2DDS_BUILD_MATCHED_EVENT_TESTS)
   add_executable(test_event_smoke src/test_event_smoke.cpp)
   target_include_directories(test_event_smoke PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
-  target_link_libraries(test_event_smoke rmw_int2dds_cpp int2dds_ffi::int2dds_ffi ${PLATFORM_LIBS})
-  ament_target_dependencies(test_event_smoke
-    rcutils
-    rmw
-    rosidl_runtime_cpp
-    rosidl_typesupport_cpp
-    std_msgs
+  target_link_libraries(test_event_smoke
+    rmw_int2dds_cpp
+    int2dds_ffi::int2dds_ffi
+    ${PLATFORM_LIBS}
+    rcutils::rcutils
+    rmw::rmw
+    rosidl_runtime_cpp::rosidl_runtime_cpp
+    rosidl_typesupport_cpp::rosidl_typesupport_cpp
+    ${std_msgs_TARGETS}
   )
 endif()
 
 if(RMW_INT2DDS_BUILD_EVENT_VALIDATION)
   add_executable(test_event_validation src/test_event_validation.cpp)
   target_include_directories(test_event_validation PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
-  target_link_libraries(test_event_validation rmw_int2dds_cpp int2dds_ffi::int2dds_ffi ${PLATFORM_LIBS})
-  ament_target_dependencies(test_event_validation
-    rcutils
-    rmw
-    rclcpp
-    rosidl_runtime_cpp
-    rosidl_typesupport_cpp
-    std_msgs
+  target_link_libraries(test_event_validation
+    rmw_int2dds_cpp
+    int2dds_ffi::int2dds_ffi
+    ${PLATFORM_LIBS}
+    rcutils::rcutils
+    rmw::rmw
+    rclcpp::rclcpp
+    rosidl_runtime_cpp::rosidl_runtime_cpp
+    rosidl_typesupport_cpp::rosidl_typesupport_cpp
+    ${std_msgs_TARGETS}
   )
 endif()
 
 add_executable(qos_durability_sub_cpp validation/qos/durability/rclcpp/qos_durability_sub.cpp)
 target_include_directories(qos_durability_sub_cpp PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
-ament_target_dependencies(qos_durability_sub_cpp
-  rclcpp
-  std_msgs
+target_link_libraries(qos_durability_sub_cpp
+  rclcpp::rclcpp
+  ${std_msgs_TARGETS}
 )
 
 add_executable(qos_durability_pub_cpp validation/qos/durability/rclcpp/qos_durability_pub.cpp)
 target_include_directories(qos_durability_pub_cpp PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
-ament_target_dependencies(qos_durability_pub_cpp
-  rclcpp
-  std_msgs
+target_link_libraries(qos_durability_pub_cpp
+  rclcpp::rclcpp
+  ${std_msgs_TARGETS}
 )
 
 add_executable(qos_history_depth_sub_cpp validation/qos/history_depth/rclcpp/qos_history_depth_sub.cpp)
 target_include_directories(qos_history_depth_sub_cpp PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
-ament_target_dependencies(qos_history_depth_sub_cpp
-  rclcpp
-  std_msgs
+target_link_libraries(qos_history_depth_sub_cpp
+  rclcpp::rclcpp
+  ${std_msgs_TARGETS}
 )
 
 add_executable(qos_history_depth_pub_cpp validation/qos/history_depth/rclcpp/qos_history_depth_pub.cpp)
 target_include_directories(qos_history_depth_pub_cpp PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
-ament_target_dependencies(qos_history_depth_pub_cpp
-  rclcpp
-  std_msgs
+target_link_libraries(qos_history_depth_pub_cpp
+  rclcpp::rclcpp
+  ${std_msgs_TARGETS}
 )
 
 add_executable(qos_deadline_sub_cpp validation/qos/deadline/rclcpp/qos_deadline_sub.cpp)
 target_include_directories(qos_deadline_sub_cpp PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
-ament_target_dependencies(qos_deadline_sub_cpp
-  rclcpp
-  std_msgs
+target_link_libraries(qos_deadline_sub_cpp
+  rclcpp::rclcpp
+  ${std_msgs_TARGETS}
 )
 
 add_executable(qos_deadline_pub_cpp validation/qos/deadline/rclcpp/qos_deadline_pub.cpp)
 target_include_directories(qos_deadline_pub_cpp PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
-ament_target_dependencies(qos_deadline_pub_cpp
-  rclcpp
-  std_msgs
+target_link_libraries(qos_deadline_pub_cpp
+  rclcpp::rclcpp
+  ${std_msgs_TARGETS}
 )
 
 add_executable(qos_liveliness_sub_cpp validation/qos/liveliness/rclcpp/qos_liveliness_sub.cpp)
 target_include_directories(qos_liveliness_sub_cpp PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
-ament_target_dependencies(qos_liveliness_sub_cpp
-  rclcpp
-  std_msgs
+target_link_libraries(qos_liveliness_sub_cpp
+  rclcpp::rclcpp
+  ${std_msgs_TARGETS}
 )
 
 add_executable(qos_liveliness_pub_cpp validation/qos/liveliness/rclcpp/qos_liveliness_pub.cpp)
 target_include_directories(qos_liveliness_pub_cpp PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
-ament_target_dependencies(qos_liveliness_pub_cpp
-  rclcpp
-  std_msgs
+target_link_libraries(qos_liveliness_pub_cpp
+  rclcpp::rclcpp
+  ${std_msgs_TARGETS}
 )
 
 add_executable(qos_lifespan_sub_cpp validation/qos/lifespan/rclcpp/qos_lifespan_sub.cpp)
 target_include_directories(qos_lifespan_sub_cpp PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
-ament_target_dependencies(qos_lifespan_sub_cpp
-  rclcpp
-  std_msgs
+target_link_libraries(qos_lifespan_sub_cpp
+  rclcpp::rclcpp
+  ${std_msgs_TARGETS}
 )
 
 add_executable(qos_lifespan_pub_cpp validation/qos/lifespan/rclcpp/qos_lifespan_pub.cpp)
 target_include_directories(qos_lifespan_pub_cpp PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
-ament_target_dependencies(qos_lifespan_pub_cpp
-  rclcpp
-  std_msgs
+target_link_libraries(qos_lifespan_pub_cpp
+  rclcpp::rclcpp
+  ${std_msgs_TARGETS}
 )
 
 add_executable(content_filter_lifecycle_check_cpp
   validation/cft/rclcpp/content_filter_lifecycle_check.cpp)
 target_include_directories(content_filter_lifecycle_check_cpp PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
-ament_target_dependencies(content_filter_lifecycle_check_cpp
-  rclcpp
-  std_msgs
+target_link_libraries(content_filter_lifecycle_check_cpp
+  rclcpp::rclcpp
+  ${std_msgs_TARGETS}
 )
 
 add_executable(callback_executor_smoke_cpp
   validation/callback/rclcpp/callback_executor_smoke.cpp)
 target_include_directories(callback_executor_smoke_cpp PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
-ament_target_dependencies(callback_executor_smoke_cpp
-  rclcpp
+target_link_libraries(callback_executor_smoke_cpp
+  rclcpp::rclcpp
 )
 
 add_executable(perf_latency_pub_cpp validation/perf/rclcpp/perf_latency_pub_cpp.cpp)
 target_include_directories(perf_latency_pub_cpp PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
-ament_target_dependencies(perf_latency_pub_cpp
-  rclcpp
-  std_msgs
+target_link_libraries(perf_latency_pub_cpp
+  rclcpp::rclcpp
+  ${std_msgs_TARGETS}
 )
 
 add_executable(perf_latency_sub_cpp validation/perf/rclcpp/perf_latency_sub_cpp.cpp)
 target_include_directories(perf_latency_sub_cpp PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
-ament_target_dependencies(perf_latency_sub_cpp
-  rclcpp
-  std_msgs
+target_link_libraries(perf_latency_sub_cpp
+  rclcpp::rclcpp
+  ${std_msgs_TARGETS}
 )
 
 add_executable(perf_throughput_pub_cpp validation/perf/rclcpp/perf_throughput_pub_cpp.cpp)
 target_include_directories(perf_throughput_pub_cpp PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
-ament_target_dependencies(perf_throughput_pub_cpp
-  rclcpp
-  std_msgs
+target_link_libraries(perf_throughput_pub_cpp
+  rclcpp::rclcpp
+  ${std_msgs_TARGETS}
 )
 
 add_executable(perf_throughput_sub_cpp validation/perf/rclcpp/perf_throughput_sub_cpp.cpp)
 target_include_directories(perf_throughput_sub_cpp PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
-ament_target_dependencies(perf_throughput_sub_cpp
-  rclcpp
-  std_msgs
+target_link_libraries(perf_throughput_sub_cpp
+  rclcpp::rclcpp
+  ${std_msgs_TARGETS}
 )
 
 add_executable(perf_readiness_pub_cpp validation/perf/rclcpp/perf_readiness_pub_cpp.cpp)
 target_include_directories(perf_readiness_pub_cpp PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
-ament_target_dependencies(perf_readiness_pub_cpp
-  rclcpp
-  std_msgs
+target_link_libraries(perf_readiness_pub_cpp
+  rclcpp::rclcpp
+  ${std_msgs_TARGETS}
 )
 
 add_executable(perf_readiness_sub_cpp validation/perf/rclcpp/perf_readiness_sub_cpp.cpp)
 target_include_directories(perf_readiness_sub_cpp PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
-ament_target_dependencies(perf_readiness_sub_cpp
-  rclcpp
-  std_msgs
+target_link_libraries(perf_readiness_sub_cpp
+  rclcpp::rclcpp
+  ${std_msgs_TARGETS}
 )
 
 # ============================================================================
