@@ -203,7 +203,9 @@ rmw_create_service(
   Int2DdsDataReaderQos * reader_qos = nullptr;
   int2dds_datareader_qos_create_default(&reader_qos);
   rmw_int2dds_cpp::apply_type_hash_user_data(
-    reader_qos, rmw_int2dds_cpp::encode_service_request_type_hash_user_data(introspection_ts));
+    reader_qos,
+    rmw_int2dds_cpp::encode_service_request_type_hash_user_data(introspection_ts) +
+    rmw_int2dds_cpp::encode_service_type_hash_user_data(introspection_ts));
   // Services use Reliable + Transient Local by default
   int2dds_datareader_qos_set_reliability(reader_qos, INT2DDS_QOS_RELIABILITY_RELIABLE, 1000000000);
   int2dds_datareader_qos_set_durability(reader_qos, INT2DDS_QOS_DURABILITY_VOLATILE);
@@ -229,7 +231,9 @@ rmw_create_service(
   Int2DdsDataWriterQos * writer_qos = nullptr;
   int2dds_datawriter_qos_create_default(&writer_qos);
   rmw_int2dds_cpp::apply_type_hash_user_data(
-    writer_qos, rmw_int2dds_cpp::encode_service_response_type_hash_user_data(introspection_ts));
+    writer_qos,
+    rmw_int2dds_cpp::encode_service_response_type_hash_user_data(introspection_ts) +
+    rmw_int2dds_cpp::encode_service_type_hash_user_data(introspection_ts));
   // Services use Reliable
   int2dds_datawriter_qos_set_reliability(writer_qos, INT2DDS_QOS_RELIABILITY_RELIABLE, 1000000000);
   int2dds_datawriter_qos_set_durability(writer_qos, INT2DDS_QOS_DURABILITY_VOLATILE);
@@ -307,10 +311,12 @@ rmw_create_service(
     }
     rmw_int2dds_cpp::common_add_local_entity(
       context_data, request_reader_gid, request_topic_name, request_type_name,
-      rosidl_type_hash_t{}, srv_data->qos, /*is_reader=*/true);
+      rosidl_type_hash_t{}, srv_data->qos, /*is_reader=*/true,
+      rmw_int2dds_cpp::get_service_type_hash(introspection_ts));
     rmw_int2dds_cpp::common_add_local_entity(
       context_data, response_writer_gid, response_topic_name, response_type_name,
-      rosidl_type_hash_t{}, srv_data->qos, /*is_reader=*/false);
+      rosidl_type_hash_t{}, srv_data->qos, /*is_reader=*/false,
+      rmw_int2dds_cpp::get_service_type_hash(introspection_ts));
     context_data->common->add_service_graph(
       request_reader_gid, response_writer_gid, node_data->name, node_data->namespace_);
   }

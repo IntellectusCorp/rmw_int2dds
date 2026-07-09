@@ -39,6 +39,9 @@ void fini_discovery(ContextData * context_data);
 // (`gid`). The node-association layer is handled separately by the caller via
 // the rmw_dds_common Context add_*_graph / remove_*_graph helpers. No-ops when
 // the common discovery context is absent.
+// `service_type_hash` is only meaningful for service/client endpoints: on ROS 2
+// Lyrical+ the GraphCache records it so rmw_get_clients/servers_info_by_service
+// reports it; on older distros it is ignored.
 void common_add_local_entity(
   ContextData * context_data,
   const rmw_gid_t & gid,
@@ -46,7 +49,8 @@ void common_add_local_entity(
   const std::string & type_name,
   const rosidl_type_hash_t & type_hash,
   const rmw_qos_profile_t & qos,
-  bool is_reader);
+  bool is_reader,
+  const rosidl_type_hash_t * service_type_hash = nullptr);
 void common_remove_local_entity(
   ContextData * context_data,
   const rmw_gid_t & gid,

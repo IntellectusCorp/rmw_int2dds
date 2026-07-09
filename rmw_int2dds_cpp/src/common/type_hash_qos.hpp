@@ -132,6 +132,48 @@ encode_service_response_type_hash_user_data(const rosidl_service_type_support_t 
   return encode_message_type_hash_user_data(type_support->response_typesupport);
 }
 
+// REP-2011 hash of the *service* type as a whole, distinct from the per-message
+// request/response hashes above.
+inline const rosidl_type_hash_t *
+get_service_type_hash(const rosidl_service_type_support_t * type_support)
+{
+#ifdef RMW_INT2DDS_HAS_TYPE_HASH
+  if (type_support == nullptr || type_support->get_type_hash_func == nullptr) {
+    return nullptr;
+  }
+  return type_support->get_type_hash_func(type_support);
+#else
+  (void)type_support;
+  return nullptr;
+#endif
+}
+
+// ROS 2 Lyrical transports the service type hash in USER_DATA as "sertypehash=...;"
+// (appended after the message "typehash=...;" pair) and records it in the GraphCache
+// so rmw_get_clients/servers_info_by_service can report it. Older distros have
+// neither the encoder nor the GraphCache parameter; collapse to an empty string.
+inline std::string
+encode_service_type_hash_user_data(const rosidl_service_type_support_t * type_support)
+{
+#if defined(RMW_INT2DDS_HAS_TYPE_HASH) && __has_include("rmw/get_service_endpoint_info.h")
+  const rosidl_type_hash_t * service_type_hash = get_service_type_hash(type_support);
+  if (service_type_hash == nullptr) {
+    return {};
+  }
+  std::string encoded;
+  if (RMW_RET_OK !=
+    rmw_dds_common::encode_sertype_hash_for_user_data_qos(*service_type_hash, encoded))
+  {
+    rmw_reset_error();
+    return {};
+  }
+  return encoded;
+#else
+  (void)type_support;
+  return {};
+#endif
+}
+
 inline void
 apply_type_hash_user_data(Int2DdsDataWriterQos * qos, const std::string & user_data)
 {
