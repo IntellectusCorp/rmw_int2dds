@@ -18,6 +18,13 @@
 #include "rmw/init.h"
 #include "rmw/init_options.h"
 
+// ROS 2 Kilted moved enclave string ownership behind dedicated helpers
+// (ros2/rmw#393); test_rmw_implementation manages enclaves through them.
+#if __has_include("rmw/enclave.h")
+#define RMW_INT2DDS_HAS_ENCLAVE_OPTIONS 1
+#include "rmw/enclave.h"
+#endif
+
 #include "rcutils/allocator.h"
 #include "rcutils/strdup.h"
 
@@ -48,7 +55,12 @@ rmw_init_options_init(
   init_options->enclave = nullptr;
   init_options->domain_id = RMW_DEFAULT_DOMAIN_ID;
   init_options->security_options = rmw_get_default_security_options();
+  init_options->discovery_options = rmw_get_zero_initialized_discovery_options();
+#if __has_include("rmw/localhost.h")
+  // ROS 2 Kilted removed rmw_localhost_only_t and this init-options field
+  // (ros2/rmw#376); localhost behavior is expressed via discovery_options there.
   init_options->localhost_only = RMW_LOCALHOST_ONLY_DEFAULT;
+#endif
 
   return RMW_RET_OK;
 }
@@ -79,10 +91,19 @@ rmw_init_options_copy(
   *dst = *src;
 
   if (src->enclave != nullptr) {
+#ifdef RMW_INT2DDS_HAS_ENCLAVE_OPTIONS
+    dst->enclave = nullptr;
+    const rmw_ret_t enclave_ret =
+      rmw_enclave_options_copy(src->enclave, &src->allocator, &dst->enclave);
+    if (enclave_ret != RMW_RET_OK) {
+      return enclave_ret;
+    }
+#else
     dst->enclave = rcutils_strdup(src->enclave, src->allocator);
     if (dst->enclave == nullptr) {
       return RMW_RET_BAD_ALLOC;
     }
+#endif
   }
 
   return RMW_RET_OK;
@@ -104,7 +125,11 @@ rmw_init_options_fini(rmw_init_options_t * init_options)
   }
 
   if (init_options->enclave != nullptr) {
+#ifdef RMW_INT2DDS_HAS_ENCLAVE_OPTIONS
+    rmw_enclave_options_fini(init_options->enclave, &init_options->allocator);
+#else
     init_options->allocator.deallocate(init_options->enclave, init_options->allocator.state);
+#endif
     init_options->enclave = nullptr;
   }
 
