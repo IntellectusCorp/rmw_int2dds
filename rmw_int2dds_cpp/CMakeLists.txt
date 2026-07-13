@@ -471,7 +471,14 @@ if(BUILD_TESTING)
   # copyright and uncrustify, but not to flake8. Keep the package lint targets
   # explicit so generated/runtime validation assets do not fail release lint.
   ament_flake8(--exclude "${RMW_INT2DDS_LINT_EXCLUDE_FILES}")
+  # Lint only the paths we own. Passing explicit paths (before FILTERS) works
+  # identically on every ament_cmake_cpplint version, unlike EXCLUDE which is
+  # single-value on Humble/Jazzy and silently turns the exclude list into
+  # positional lint targets. include/ is narrowed to our namespace so a
+  # vendored include/int2dds-ffi.h can never enter the lint scope.
   ament_cpplint(
+    "${CMAKE_CURRENT_SOURCE_DIR}/include/rmw_int2dds_cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src"
     FILTERS
       -build/include_order
       -build/include_subdir
@@ -481,7 +488,6 @@ if(BUILD_TESTING)
       -whitespace/blank_line
       -whitespace/comments
       -whitespace/line_length
-    EXCLUDE "${RMW_INT2DDS_LINT_EXCLUDE_FILES}"
   )
 
   # Unit tests (uncomment when needed)
