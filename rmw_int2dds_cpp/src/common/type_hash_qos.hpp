@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef RMW_INT2DDS_CPP__COMMON__TYPE_HASH_QOS_HPP_
-#define RMW_INT2DDS_CPP__COMMON__TYPE_HASH_QOS_HPP_
+#ifndef COMMON__TYPE_HASH_QOS_HPP_
+#define COMMON__TYPE_HASH_QOS_HPP_
 
 #include <cstdint>
 #include <string>
@@ -125,4 +125,4 @@ apply_type_hash_user_data(Int2DdsDataReaderQos * qos, const std::string & user_d
 
 }  // namespace rmw_int2dds_cpp
 
-#endif  // RMW_INT2DDS_CPP__COMMON__TYPE_HASH_QOS_HPP_
+#endif  // COMMON__TYPE_HASH_QOS_HPP_

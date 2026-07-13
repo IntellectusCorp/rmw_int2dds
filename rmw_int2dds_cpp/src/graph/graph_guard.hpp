@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef RMW_INT2DDS_CPP__GRAPH__GRAPH_GUARD_HPP_
-#define RMW_INT2DDS_CPP__GRAPH__GRAPH_GUARD_HPP_
+#ifndef GRAPH__GRAPH_GUARD_HPP_
+#define GRAPH__GRAPH_GUARD_HPP_
 
 #include "int2dds-ffi.h"
 #include "rmw_int2dds_cpp/types.hpp"
@@ -34,4 +34,4 @@ inline void trigger_graph_guard_condition(ContextData * context_data)
 
 }  // namespace rmw_int2dds_cpp
 
-#endif  // RMW_INT2DDS_CPP__GRAPH__GRAPH_GUARD_HPP_
+#endif  // GRAPH__GRAPH_GUARD_HPP_
