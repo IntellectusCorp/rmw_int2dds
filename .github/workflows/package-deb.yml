@@ -2,6 +2,10 @@
 # Each version branch (jazzy/humble/rolling) carries its own copy of this workflow with
 # ROS_DISTRO set to that branch's distro. amd64 and arm64 are built and verified
 # (official ros:<distro>-ros-base images ship for those two architectures).
+#
+# Each arch runs on its NATIVE GitHub-hosted runner (amd64 -> ubuntu-24.04,
+# arm64 -> ubuntu-24.04-arm). This avoids QEMU user-mode emulation, under which
+# libc-bin's ldconfig trigger segfaults during `apt-get install` of the debs.
 name: package-deb
 
 on:
@@ -19,11 +23,15 @@ env:
 
 jobs:
   build:
-    runs-on: ubuntu-24.04
+    runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
       matrix:
-        arch: [amd64, arm64]
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
     steps:
       - name: Checkout rmw repo
         uses: actions/checkout@v4
@@ -39,9 +47,8 @@ jobs:
           repository: IntellectusCorp/int2dds_ffi_vendor
           path: int2dds_ffi_vendor
 
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
-
+      # No QEMU setup: each arch builds/verifies its own native platform on a
+      # matching runner, so docker --platform runs natively (no emulation).
       - name: Build debs
         working-directory: rmw_int2dds
         env:
