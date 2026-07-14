@@ -23,6 +23,7 @@ int2DDS as its middleware via `RMW_IMPLEMENTATION=rmw_int2dds_cpp`.
 |--------------|--------|
 | Humble Hawksbill (LTS) | Supported (verified) |
 | Jazzy Jalisco (LTS)    | Supported (verified) |
+| Lyrical Luth (LTS)     | Supported (verified) |
 
 ### Supported platforms
 
@@ -95,27 +96,66 @@ All results below were produced by running the listed suites directly; see
 `doc/` for methodology. Same-vendor and cross-vendor integration tests use the
 official ROS 2 repositories (`rmw_implementation`, `system_tests`).
 
-| Suite | Jazzy | Humble |
-|---|---|---|
-| `test_rmw_implementation` (RMW conformance gate) | 16/16 | 15/15 (full set; `test_event` exists on Jazzy only) |
-| `test_communication` same-RMW | 30/30 | 29/29 |
-| `test_quality_of_service` | 4/4 | 3/3 (full set; `best_available` is Iron+) |
-| `test_rclcpp` | 27/27 | 27/27 |
-| Cross-vendor pub/sub vs `rmw_fastrtps_cpp` | 8/8 | 8/8 |
-| Cross-vendor pub/sub vs `rmw_cyclonedds_cpp` | 8/8 | 8/8 |
-| `test_cli_remapping` | 1/1 | 1/1 |
-| `test_security` | 6/6 | 6/6 |
-| In-repo QoS demos (deadline/durability/history/lifespan/liveliness) | all pass | all pass |
-| `rosdoc2 build` | pass | pass |
-| `ament_lint` suite | 242 tests, 0 failures | 238 tests, 0 failures |
+| Suite | Lyrical | Jazzy | Humble |
+|---|---|---|---|
+| `test_rmw_implementation` (RMW conformance gate) | 16/16 | 16/16 | 15/15 |
+| `test_communication` same-RMW | 34/34 | 30/30 | 29/29 |
+| `test_quality_of_service` | 4/4 | 4/4 | 3/3 |
+| `test_rclcpp` | 25/25 | 25/25 | 25/25 |
+| Cross-vendor vs `rmw_fastrtps_cpp` | 8/8 | 8/8 | 8/8 |
+| Cross-vendor vs `rmw_cyclonedds_cpp` | 8/8 excluding `WStrings` (see Known issues) | 8/8 | 8/8 |
+| `test_cli_remapping` | 1/1 | 1/1 | 1/1 |
+| `test_security` | 6/6 | 6/6 | 6/6 |
+| In-repo QoS check scripts | 6/6 | 6/6 | 6/6 |
+| `rosdoc2 build` | pass | pass | pass |
+| `ament_lint` suite | 194 tests, 0 failures (55 cppcheck skips) | 194 tests, 0 failures (55 cppcheck skips) | 194 tests, 0 failures (55 cppcheck skips) |
 
-Cross-vendor service/action combinations are skipped upstream for **all**
-vendor pairs and are therefore not part of the cross-vendor scope.
+Cross-vendor scope: the upstream suite skips service/action combinations for
+**all** vendor pairs on every distro, so the cross-vendor rows cover the 8
+pub/sub direction/language combinations only.
+
+Counting notes (the full run/skip/fail decomposition of every cell was
+verified against the per-test xunit/gtest XML results):
+
+- Totals differ across columns only where the upstream suite itself differs by
+  distro version (keyed-type tests, `test_event`, `best_available` QoS), never
+  because a test was dropped.
+- `test_rclcpp`: 25 is the actually-run count on all three distros; the raw
+  ctest entry count adds (installed RMW vendors − 1) × 2 upstream-skipped
+  cross-RMW `node_name` variants, so it varies by environment.
+- Upstream-skipped cases inside otherwise-run suites (6 loaned-message /
+  allocator cases in the Lyrical gate, 5 in Jazzy) are counted in ctest's
+  headline totals even though they do not run.
+- `ament_lint`: 194 is the ament linter testcase count (the eight linters'
+  combined xunit results); running `colcon test-result --all` prints a higher
+  number only because it also sums the ctest summary file that wraps those same
+  eight linters. Identical linter composition on all three distros (cpplint
+  covers the same 37 C++ files); the 55 skips are ament_cppcheck's performance
+  guard for cppcheck 2.x (set `AMENT_CPPCHECK_ALLOW_SLOW_VERSIONS=1` to run
+  it). The same guard skips the cppcheck entry in `test_security`.
 
 ## Known issues
 
+- `spin_all_fail_wait_set_clear` (rclcpp): int2DDS delivers same-participant
+  samples asynchronously, so this error-injection robustness test does not
+  observe the mocked wait-set clear within its short (~1 ms) window. No data
+  loss or crash occurs, and this is not an RMW conformance-gate test; it is
+  tracked as a known limitation.
 - DDS-Security (SROS 2) is not supported yet (see `doc/security.rst`).
-- Content-filtered topics are not functional yet.
+- Lyrical cross-vendor vs `rmw_cyclonedds_cpp`: the `WStrings` message type is
+  not interoperable in either direction. This is a vendor-level wstring
+  wire-format mismatch, not an int2DDS defect: on Lyrical, CycloneDDS
+  serializes wstring as UTF-16 (2 bytes/char, byte-length prefix) while
+  FastDDS and int2DDS use 4 bytes/char with a character-count prefix
+  (verified by serializing the same message under the int2DDS, FastDDS, and
+  CycloneDDS RMWs — int2DDS output is byte-identical to FastDDS; RTI Connext
+  is in the same 4-byte camp because `rmw_connextdds` serializes ROS messages
+  through `rosidl_typesupport_fastrtps`). Upstream `test_communication`
+  acknowledges the same incompatibility by excluding `WStrings` from the
+  FastDDS×CycloneDDS and Connext×CycloneDDS pairs ("CycloneDDS don't FastRTPS
+  interoperate for WString"); int2DDS is simply not on that vendor-name
+  exclusion list, so the case runs and fails. All other 13 message types pass
+  in both directions.
 
 ## Documentation
 
