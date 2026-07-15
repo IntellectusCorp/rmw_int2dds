@@ -319,6 +319,14 @@ rmw_context_fini(rmw_context_t * context)
   }
 
   if (context_data->participant != nullptr) {
+    // Delete any entities still attached to the participant (e.g. a node's
+    // built-in parameter services / rosout publisher) before tearing it down.
+    // int2dds_delete_participant refuses with PRECONDITION_NOT_MET and orphans
+    // the participant if non-builtin entities remain, leaking that participant's
+    // sockets, eventfds and epoll instances. A context reclaimed by the client
+    // library's garbage collector (rather than an explicit destroy) can reach
+    // here with those entities still attached.
+    int2dds_participant_delete_contained_entities(context_data->participant);
     int2dds_delete_participant(context_data->participant);
   }
 
