@@ -2,7 +2,7 @@
 
 <div align="center">
 
-A **ROS 2 RMW implementation** that binds the [int2DDS](https://github.com/IntellectusCorp/int2DDS)
+A **ROS 2 RMW implementation** that binds the **int2DDS**
 DDS/RTPS middleware to the ROS 2 middleware (RMW) interface.
 
 </div>
