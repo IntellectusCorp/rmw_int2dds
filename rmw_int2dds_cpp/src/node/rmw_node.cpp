@@ -410,9 +410,40 @@ rmw_destroy_node(rmw_node_t * node)
     node_data->graph_guard_condition = nullptr;
   }
 
-  // Decrement context reference count
+  // Decrement context reference count. Release the participant once the last
+  // node is gone instead of waiting for rmw_context_fini: a client library may
+  // keep the context object alive (rclcpp holds internal references to it), so
+  // rmw_context_fini never runs and every node create/destroy cycle leaks the
+  // participant's sockets, eventfds and epoll instances. rmw_fastrtps releases
+  // the participant the same way, from decrement_context_impl_ref_count() in
+  // rmw_destroy_node. Every pointer is cleared here and rmw_context_fini is
+  // nullptr-guarded, so a later fini remains safe.
   if (node_data->context_data != nullptr) {
-    node_data->context_data->ref_count--;
+    auto * ctx = node_data->context_data;
+    if (--ctx->ref_count <= 1 && ctx->participant != nullptr) {
+      rmw_int2dds_cpp::fini_discovery(ctx);
+
+      if (ctx->graph_guard_condition != nullptr) {
+        int2dds_guard_condition_delete(ctx->graph_guard_condition);
+        ctx->graph_guard_condition = nullptr;
+      }
+      if (ctx->default_subscriber != nullptr) {
+        int2dds_delete_subscriber(ctx->default_subscriber);
+        ctx->default_subscriber = nullptr;
+      }
+      if (ctx->default_publisher != nullptr) {
+        int2dds_delete_publisher(ctx->default_publisher);
+        ctx->default_publisher = nullptr;
+      }
+      int2dds_participant_delete_contained_entities(ctx->participant);
+      int2dds_delete_participant(ctx->participant);
+      ctx->participant = nullptr;
+
+      if (ctx->factory != nullptr) {
+        int2dds_domain_participant_factory_finalize(ctx->factory);
+        ctx->factory = nullptr;
+      }
+    }
   }
 
   // Free name and namespace
