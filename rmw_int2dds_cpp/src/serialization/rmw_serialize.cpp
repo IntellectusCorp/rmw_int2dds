@@ -571,6 +571,7 @@ rmw_serialization_support_init(
   (void)allocator;
   (void)serialization_support;
   // Dynamic message type support is not provided by int2dds
+  RMW_SET_ERROR_MSG("rmw_serialization_support_init is not supported by rmw_int2dds_cpp");
   return RMW_RET_UNSUPPORTED;
 }
 #endif
