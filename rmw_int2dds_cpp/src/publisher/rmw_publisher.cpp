@@ -676,7 +676,10 @@ rmw_destroy_publisher(rmw_node_t * node, rmw_publisher_t * publisher)
     }
     auto & lpubs = node_data->live_publishers;
     for (auto it = lpubs.begin(); it != lpubs.end(); ++it) {
-      if (*it == pub_data) { lpubs.erase(it); break; }
+      if (*it == pub_data) {
+        lpubs.erase(it);
+        break;
+      }
     }
   }
 
