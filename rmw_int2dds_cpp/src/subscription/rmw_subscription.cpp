@@ -193,18 +193,60 @@ append_field_descriptor(
     return false;
   }
 
-  // Use the same ROS->int2dds field-type mapping that the topic type builder
-  // uses (INT2DDS_FIELD_*). The previous ad-hoc 0-9 table did not match the
-  // values int2dds_create_topic_with_field_descriptors expects and omitted
-  // float types entirely, so content filters on float/string fields (and in
-  // fact every field) were registered with the wrong type id.
-  const int32_t field_type = ros_type_to_int2dds_field(ros_type);
-  if (field_type < 0) {
-    return false;
+  // int2dds_create_topic_with_field_descriptors takes its own scalar-only field
+  // codes, NOT the INT2DDS_FIELD_* constants used everywhere else. The core says
+  // so itself in ffi/src/topic.rs (field_descriptor_type): "a distinct encoding
+  // from the INT2DDS_FIELD_* constants", mapping 0..9 to String, Int32, UInt32,
+  // Int16, UInt16, Int64, UInt64, Int8, UInt8, Bool and rejecting everything
+  // else. Feeding it INT2DDS_FIELD_* registers every field under the wrong type
+  // and content filtering silently stops matching, so keep this table in step
+  // with that function rather than with ros_type_to_int2dds_field().
+  //
+  // Types outside the table (float, double, char, wchar, nested, sequences) have
+  // no code, so return false and let the caller fall back to an unfiltered
+  // subscription instead of registering a wrong one.
+  uint32_t field_type = 0;
+  switch (ros_type) {
+    case rosidl_typesupport_introspection_c__ROS_TYPE_STRING:
+      field_type = 0;
+      break;
+    case rosidl_typesupport_introspection_c__ROS_TYPE_INT32:
+      field_type = 1;
+      break;
+    case rosidl_typesupport_introspection_c__ROS_TYPE_UINT32:
+      field_type = 2;
+      break;
+    case rosidl_typesupport_introspection_c__ROS_TYPE_INT16:
+      field_type = 3;
+      break;
+    case rosidl_typesupport_introspection_c__ROS_TYPE_UINT16:
+      field_type = 4;
+      break;
+    // int64/uint64 have codes (5 and 6) but filtering on them does not work:
+    // the core aligns to the absolute buffer offset instead of the offset within
+    // the payload, so an 8-byte field is read 4 bytes past its real position
+    // (ffi/src/data.rs, cdr_parse_field_value). Narrower fields are unaffected
+    // because offset 4 already satisfies their alignment. Registering them
+    // anyway would set is_cft_enabled and then deliver everything, which is
+    // worse than reporting no filter: callers can filter themselves once they
+    // know the middleware will not. Restore these two once the core is fixed.
+    case rosidl_typesupport_introspection_c__ROS_TYPE_INT64:
+    case rosidl_typesupport_introspection_c__ROS_TYPE_UINT64:
+      return false;
+    case rosidl_typesupport_introspection_c__ROS_TYPE_INT8:
+      field_type = 7;
+      break;
+    case rosidl_typesupport_introspection_c__ROS_TYPE_UINT8:
+      field_type = 8;
+      break;
+    case rosidl_typesupport_introspection_c__ROS_TYPE_BOOL:
+      field_type = 9;
+      break;
+    default:
+      return false;
   }
-
   descriptors.names.emplace_back(name);
-  descriptors.types.push_back(static_cast<uint32_t>(field_type));
+  descriptors.types.push_back(field_type);
   descriptors.is_key.push_back(is_key ? 1U : 0U);
   descriptors.has_key = descriptors.has_key || is_key;
   return true;
