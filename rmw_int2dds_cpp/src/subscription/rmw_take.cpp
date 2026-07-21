@@ -532,6 +532,7 @@ rmw_take_loaned_message(
   (void)taken;
   (void)allocation;
   // Loaned messages are not supported by int2dds
+  RMW_SET_ERROR_MSG("rmw_take_loaned_message is not supported by rmw_int2dds_cpp");
   return RMW_RET_UNSUPPORTED;
 }
 
@@ -549,6 +550,7 @@ rmw_take_loaned_message_with_info(
   (void)message_info;
   (void)allocation;
   // Loaned messages are not supported by int2dds
+  RMW_SET_ERROR_MSG("rmw_take_loaned_message_with_info is not supported by rmw_int2dds_cpp");
   return RMW_RET_UNSUPPORTED;
 }
 
@@ -560,6 +562,7 @@ rmw_return_loaned_message_from_subscription(
   (void)subscription;
   (void)loaned_message;
   // Loaned messages are not supported by int2dds
+  RMW_SET_ERROR_MSG("rmw_return_loaned_message_from_subscription is not supported");
   return RMW_RET_UNSUPPORTED;
 }
 
@@ -576,6 +579,7 @@ rmw_take_dynamic_message(
   (void)taken;
   (void)allocation;
   // Dynamic message type support is not provided by int2dds
+  RMW_SET_ERROR_MSG("rmw_take_dynamic_message is not supported by rmw_int2dds_cpp");
   return RMW_RET_UNSUPPORTED;
 }
 
@@ -593,6 +597,7 @@ rmw_take_dynamic_message_with_info(
   (void)message_info;
   (void)allocation;
   // Dynamic message type support is not provided by int2dds
+  RMW_SET_ERROR_MSG("rmw_take_dynamic_message_with_info is not supported by rmw_int2dds_cpp");
   return RMW_RET_UNSUPPORTED;
 }
 #endif

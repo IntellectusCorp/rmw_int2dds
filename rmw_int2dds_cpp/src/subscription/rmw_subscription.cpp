@@ -1217,6 +1217,7 @@ rmw_init_subscription_allocation(
   (void)type_support;
   (void)message_bounds;
   (void)allocation;
+  RMW_SET_ERROR_MSG("rmw_init_subscription_allocation is not supported by rmw_int2dds_cpp");
   return RMW_RET_UNSUPPORTED;
 }
 
@@ -1224,6 +1225,7 @@ rmw_ret_t
 rmw_fini_subscription_allocation(rmw_subscription_allocation_t * allocation)
 {
   (void)allocation;
+  RMW_SET_ERROR_MSG("rmw_fini_subscription_allocation is not supported by rmw_int2dds_cpp");
   return RMW_RET_UNSUPPORTED;
 }
 
@@ -1255,6 +1257,7 @@ rmw_subscription_get_network_flow_endpoints(
   (void)allocator;
   (void)network_flow_endpoint_array;
   // Not supported by int2dds
+  RMW_SET_ERROR_MSG("rmw_subscription_get_network_flow_endpoints is not supported");
   return RMW_RET_UNSUPPORTED;
 }
 
