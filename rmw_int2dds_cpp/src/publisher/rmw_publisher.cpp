@@ -801,6 +801,7 @@ rmw_borrow_loaned_message(
   (void)publisher;
   (void)type_support;
   (void)ros_message;
+  RMW_SET_ERROR_MSG("rmw_borrow_loaned_message is not supported by rmw_int2dds_cpp");
   return RMW_RET_UNSUPPORTED;
 }
 
@@ -811,6 +812,7 @@ rmw_return_loaned_message_from_publisher(
 {
   (void)publisher;
   (void)loaned_message;
+  RMW_SET_ERROR_MSG("rmw_return_loaned_message_from_publisher is not supported by rmw_int2dds_cpp");
   return RMW_RET_UNSUPPORTED;
 }
 
@@ -878,6 +880,7 @@ rmw_publisher_set_on_new_subscription_callback(
   (void)publisher;
   (void)callback;
   (void)user_data;
+  RMW_SET_ERROR_MSG("rmw_publisher_set_on_new_subscription_callback is not supported");
   return RMW_RET_UNSUPPORTED;
 }
 
@@ -891,6 +894,7 @@ rmw_publisher_get_network_flow_endpoints(
   (void)allocator;
   (void)network_flow_endpoint_array;
   // Not supported by int2dds
+  RMW_SET_ERROR_MSG("rmw_publisher_get_network_flow_endpoints is not supported by rmw_int2dds_cpp");
   return RMW_RET_UNSUPPORTED;
 }
 }  // extern "C"
