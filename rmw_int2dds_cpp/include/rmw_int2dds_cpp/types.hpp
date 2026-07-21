@@ -102,6 +102,26 @@ struct ContextData
   std::map<std::array<uint8_t, RMW_GID_STORAGE_SIZE>, bool> synced_remote_entities;
 };
 
+/// Create the DDS resources a context needs: participant factory, participant,
+/// default publisher/subscriber, graph guard condition and node-graph discovery.
+/// Uses context_data->domain_id, so that must be set first.
+///
+/// rmw_destroy_node releases these once the last node is gone (a client library
+/// may keep the context alive, so rmw_context_fini may never run). rmw_create_node
+/// calls this again to bring them back, mirroring rmw_fastrtps, where
+/// increment_context_impl_ref_count() recreates what
+/// decrement_context_impl_ref_count() released. Rolls back on failure and leaves
+/// every pointer null.
+///
+/// \return RMW_RET_OK on success, otherwise the error is already set.
+rmw_ret_t
+acquire_context_resources(ContextData * context_data, const char * enclave);
+
+/// Release what acquire_context_resources() created, nulling every pointer so a
+/// later acquire or fini is safe.
+void
+release_context_resources(ContextData * context_data);
+
 /// Node implementation data
 struct NodeData
 {
