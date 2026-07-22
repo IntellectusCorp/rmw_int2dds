@@ -85,6 +85,49 @@ set_reader_history(Int2DdsDataReaderQos * reader_qos, const rmw_qos_profile_t & 
   }
 }
 
+// Reliability and durability used to be pinned to RELIABLE/VOLATILE here, which
+// dropped whatever the caller asked for. Two endpoints therefore always matched,
+// even when their profiles were incompatible under the DDS request/offer rules --
+// rmw_fastrtps_cpp and rmw_cyclonedds_cpp both refuse the match in that case, so a
+// service that only worked on this RMW would break on any other one. Map the
+// requested policies the same way rmw_create_publisher and rmw_create_subscription
+// already do; system-default values are resolved beforehand by resolve_actual_qos.
+void
+set_writer_reliability_durability(
+  Int2DdsDataWriterQos * writer_qos, const rmw_qos_profile_t & qos)
+{
+  if (qos.reliability == RMW_QOS_POLICY_RELIABILITY_BEST_EFFORT) {
+    int2dds_datawriter_qos_set_reliability(writer_qos, INT2DDS_QOS_RELIABILITY_BEST_EFFORT, 0);
+  } else {
+    int2dds_datawriter_qos_set_reliability(
+      writer_qos, INT2DDS_QOS_RELIABILITY_RELIABLE, 1000000000);
+  }
+
+  if (qos.durability == RMW_QOS_POLICY_DURABILITY_TRANSIENT_LOCAL) {
+    int2dds_datawriter_qos_set_durability(writer_qos, INT2DDS_QOS_DURABILITY_TRANSIENT_LOCAL);
+  } else {
+    int2dds_datawriter_qos_set_durability(writer_qos, INT2DDS_QOS_DURABILITY_VOLATILE);
+  }
+}
+
+void
+set_reader_reliability_durability(
+  Int2DdsDataReaderQos * reader_qos, const rmw_qos_profile_t & qos)
+{
+  if (qos.reliability == RMW_QOS_POLICY_RELIABILITY_BEST_EFFORT) {
+    int2dds_datareader_qos_set_reliability(reader_qos, INT2DDS_QOS_RELIABILITY_BEST_EFFORT, 0);
+  } else {
+    int2dds_datareader_qos_set_reliability(
+      reader_qos, INT2DDS_QOS_RELIABILITY_RELIABLE, 1000000000);
+  }
+
+  if (qos.durability == RMW_QOS_POLICY_DURABILITY_TRANSIENT_LOCAL) {
+    int2dds_datareader_qos_set_durability(reader_qos, INT2DDS_QOS_DURABILITY_TRANSIENT_LOCAL);
+  } else {
+    int2dds_datareader_qos_set_durability(reader_qos, INT2DDS_QOS_DURABILITY_VOLATILE);
+  }
+}
+
 }  // namespace
 
 extern "C"
@@ -161,6 +204,9 @@ rmw_create_service(
 
   srv_data->type_support = introspection_ts;
   srv_data->qos = *qos_policies;
+  // Resolve system-default values up front so the profile stored here is the one
+  // actually applied below, which is what rmw_service_*_get_actual_qos reports.
+  rmw_int2dds_cpp::resolve_actual_qos(&srv_data->qos);
   srv_data->gid = rmw_int2dds_cpp::generate_service_gid();
   srv_data->node_data = node_data;
   srv_data->service_name = service_name;
@@ -206,9 +252,7 @@ rmw_create_service(
   int2dds_datareader_qos_create_default(&reader_qos);
   rmw_int2dds_cpp::apply_type_hash_user_data(
     reader_qos, rmw_int2dds_cpp::encode_service_request_type_hash_user_data(introspection_ts));
-  // Services use Reliable + Transient Local by default
-  int2dds_datareader_qos_set_reliability(reader_qos, INT2DDS_QOS_RELIABILITY_RELIABLE, 1000000000);
-  int2dds_datareader_qos_set_durability(reader_qos, INT2DDS_QOS_DURABILITY_VOLATILE);
+  set_reader_reliability_durability(reader_qos, srv_data->qos);
   set_reader_history(reader_qos, srv_data->qos);
 
   // Create request DataReader
@@ -232,9 +276,7 @@ rmw_create_service(
   int2dds_datawriter_qos_create_default(&writer_qos);
   rmw_int2dds_cpp::apply_type_hash_user_data(
     writer_qos, rmw_int2dds_cpp::encode_service_response_type_hash_user_data(introspection_ts));
-  // Services use Reliable
-  int2dds_datawriter_qos_set_reliability(writer_qos, INT2DDS_QOS_RELIABILITY_RELIABLE, 1000000000);
-  int2dds_datawriter_qos_set_durability(writer_qos, INT2DDS_QOS_DURABILITY_VOLATILE);
+  set_writer_reliability_durability(writer_qos, srv_data->qos);
   set_writer_history(writer_qos, srv_data->qos);
 
   // Create response DataWriter
