@@ -66,6 +66,20 @@ resolve_actual_qos(rmw_qos_profile_t * qos)
   {
     qos->durability = RMW_QOS_POLICY_DURABILITY_VOLATILE;
   }
+#ifdef RMW_QOS_DEADLINE_BEST_AVAILABLE
+  // Publishers and subscriptions negotiate BEST_AVAILABLE against existing
+  // endpoints (qos_profile_get_best_available_for_topic_*), so it never reaches
+  // here for them. Services and clients do not run that negotiation, so a
+  // BEST_AVAILABLE request survives; map it to the concrete value the create
+  // path actually applies (Reliable/Volatile) so get_actual_qos does not report
+  // the unresolved BEST_AVAILABLE marker.
+  if (qos->reliability == RMW_QOS_POLICY_RELIABILITY_BEST_AVAILABLE) {
+    qos->reliability = RMW_QOS_POLICY_RELIABILITY_RELIABLE;
+  }
+  if (qos->durability == RMW_QOS_POLICY_DURABILITY_BEST_AVAILABLE) {
+    qos->durability = RMW_QOS_POLICY_DURABILITY_VOLATILE;
+  }
+#endif
   if (qos->liveliness == RMW_QOS_POLICY_LIVELINESS_SYSTEM_DEFAULT ||
     qos->liveliness == RMW_QOS_POLICY_LIVELINESS_UNKNOWN)
   {
