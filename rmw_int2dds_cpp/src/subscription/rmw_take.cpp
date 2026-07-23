@@ -142,6 +142,29 @@ fill_message_info_from_sample(
   }
 }
 
+/// True when publication_handle names a publisher created on the same node as
+/// this subscription. Local publisher gids are the writer endpoint GUIDs that the
+/// take path also reports as publication_handle (they compare equal byte-for-byte),
+/// so an exact match identifies a same-node publication. Lets
+/// ignore_local_publications drop only local samples instead of every sample.
+bool
+is_local_publication(
+  const rmw_int2dds_cpp::SubscriptionData * sub_data,
+  const Int2DdsSampleInfo & info)
+{
+  rmw_int2dds_cpp::NodeData * node_data = sub_data->node_data;
+  if (node_data == nullptr) {
+    return false;
+  }
+  std::lock_guard<std::mutex> lock(node_data->entities_mutex);
+  for (const auto & pub_gid : node_data->publishers) {
+    if (memcmp(pub_gid.data, info.publication_handle, sizeof(info.publication_handle)) == 0) {
+      return true;
+    }
+  }
+  return false;
+}
+
 /// Helper function to take a single message from a subscription
 /// Returns RMW_RET_OK if data was taken, RMW_RET_ERROR on error
 /// Sets *taken to true if data was actually received
@@ -173,12 +196,15 @@ take_message_internal(
   bool have_sample_info = false;
   std::unique_lock<std::mutex> buffer_lock;
 
-  // Take data from DDS. When the caller wants message info, go through the
-  // batch API (the only serialized take that exposes SampleInfo); otherwise
-  // keep the loaned path, which avoids copying into an intermediate buffer.
+  // Take data from DDS. When the caller wants message info -- or when
+  // ignore_local_publications must inspect each sample's origin -- go through the
+  // batch API (the only serialized take that exposes SampleInfo); otherwise keep
+  // the loaned path, which avoids copying into an intermediate buffer.
+  const bool want_sample_info =
+    message_info != nullptr || subscription->options.ignore_local_publications;
   const uint64_t take_t0 = profile ? now_us() : 0;
   Int2DdsRet ret;
-  if (message_info != nullptr) {
+  if (want_sample_info) {
     buffer_lock = std::unique_lock<std::mutex>(sub_data->take_buffer_mutex);
     if (sub_data->take_buffer.size() < DEFAULT_RECEIVE_BUFFER_SIZE) {
       sub_data->take_buffer.resize(DEFAULT_RECEIVE_BUFFER_SIZE);
@@ -218,11 +244,12 @@ take_message_internal(
     return RMW_RET_OK;
   }
 
-  if (subscription->options.ignore_local_publications) {
-    // int2dds cannot yet distinguish local from remote publications at take
-    // time, so honour ignore_local_publications by dropping the sample (taken
-    // stays false). Matches the Humble implementation and passes the (intra-
-    // process) conformance test; note such a subscription also drops remote data.
+  if (subscription->options.ignore_local_publications && have_sample_info &&
+    is_local_publication(sub_data, sample_info))
+  {
+    // Honour ignore_local_publications by dropping only samples from this node's
+    // own publishers; genuinely remote data is still delivered. The sample was
+    // consumed, so taken stays false and the caller sees no message here.
     return RMW_RET_OK;
   }
 
@@ -332,8 +359,10 @@ take_serialized_message_internal(
     return RMW_RET_OK;
   }
 
-  if (subscription->options.ignore_local_publications) {
-    // See take_message_internal: drop the sample to honour ignore_local_publications.
+  if (subscription->options.ignore_local_publications &&
+    is_local_publication(sub_data, sample_info))
+  {
+    // See take_message_internal: drop only this node's own publications.
     return RMW_RET_OK;
   }
 
