@@ -12,11 +12,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <cstdint>
+#include <string>
 #include <tuple>
 #include "rmw/rmw.h"
 #include "rmw/error_handling.h"
 #include "rmw/init.h"
 #include "rmw/init_options.h"
+#if __has_include("rmw/discovery_options.h")
+// rmw_discovery_options_t / static_peers exist from Iron onward; Humble uses the
+// older localhost_only field and has no discovery_options, so guard all use of it.
+#include "rmw/discovery_options.h"
+#define RMW_INT2DDS_HAS_DISCOVERY_OPTIONS 1
+#endif
 
 // ROS 2 Kilted moved enclave string ownership behind dedicated helpers
 // (ros2/rmw#393); test_rmw_implementation manages enclaves through them.
@@ -69,6 +77,70 @@ release_context_resources(ContextData * context_data)
   }
 }
 
+namespace
+{
+#ifdef RMW_INT2DDS_HAS_DISCOVERY_OPTIONS
+// SPDP unicast discovery port per RTPS 9.6.2.3 (matches int2dds port_manager.rs):
+//   7400 + 250 * domain_id + 10 + 2 * participant_id
+constexpr uint32_t kSpdpPortBase = 7400;
+constexpr uint32_t kDomainGain = 250;
+constexpr uint32_t kUnicastOffset = 10;
+constexpr uint32_t kParticipantGain = 2;
+// A static peer's remote participant_id is unknown, so probe a bounded range and
+// let int2dds SPDP unicast-announce to each. 0..kMaxStaticPeerParticipantId covers
+// the common single-host multi-process layout without an unbounded peer list.
+constexpr uint32_t kMaxStaticPeerParticipantId = 10;
+
+// Accept only dotted-decimal IPv4. int2dds parses each initial peer as an ip:port
+// SocketAddr, so hostnames, IPv6 and subnets (e.g. 192.168.0.0/24) cannot be
+// forwarded and are skipped rather than silently mis-parsed.
+bool is_ipv4_literal(const char * s)
+{
+  int dots = 0;
+  for (const char * p = s; *p != '\0'; ++p) {
+    if (*p == '.') {
+      ++dots;
+    } else if (*p < '0' || *p > '9') {
+      return false;
+    }
+  }
+  return dots == 3;
+}
+
+// Translate rmw_discovery_options static_peers (port-less IPs) into the
+// "ip:port,ip:port,..." string int2dds reads from the "int2dds.initial_peers"
+// property. Returns empty when no usable static peer was given.
+std::string build_initial_peers_string(
+  const rmw_discovery_options_t & discovery_options, size_t domain_id)
+{
+  if (discovery_options.static_peers == nullptr ||
+    discovery_options.static_peers_count == 0)
+  {
+    return std::string();
+  }
+  std::string out;
+  for (size_t i = 0; i < discovery_options.static_peers_count; ++i) {
+    const char * addr = discovery_options.static_peers[i].peer_address;
+    if (!is_ipv4_literal(addr)) {
+      continue;
+    }
+    for (uint32_t pid = 0; pid <= kMaxStaticPeerParticipantId; ++pid) {
+      const uint32_t port = kSpdpPortBase +
+        kDomainGain * static_cast<uint32_t>(domain_id) +
+        kUnicastOffset + kParticipantGain * pid;
+      if (!out.empty()) {
+        out += ',';
+      }
+      out += addr;
+      out += ':';
+      out += std::to_string(port);
+    }
+  }
+  return out;
+}
+#endif  // RMW_INT2DDS_HAS_DISCOVERY_OPTIONS
+}  // namespace
+
 rmw_ret_t
 acquire_context_resources(ContextData * context_data, const char * enclave)
 {
@@ -84,11 +156,39 @@ acquire_context_resources(ContextData * context_data, const char * enclave)
     return RMW_RET_ERROR;
   }
 
-  ret = int2dds_create_participant(
-    context_data->factory,
-    "rmw_int2dds_participant",
-    static_cast<int32_t>(context_data->domain_id),
-    &context_data->participant);
+  if (!context_data->localhost_only && context_data->initial_peers.empty()) {
+    ret = int2dds_create_participant(
+      context_data->factory,
+      "rmw_int2dds_participant",
+      static_cast<int32_t>(context_data->domain_id),
+      &context_data->participant);
+  } else {
+    // Discovery was customised, so build the participant from a QoS handle:
+    //  - localhost_only: multicast_ttl=0 keeps multicast SPDP on the host, so
+    //    remote hosts cannot auto-discover us (local discovery is unaffected).
+    //  - static peers: the "int2dds.initial_peers" property feeds SpdpLogic.
+    // Both are plain properties; no core change or optional feature plugin.
+    Int2DdsParticipantQos * qos = nullptr;
+    ret = int2dds_participant_qos_create_default(&qos);
+    if (ret == INT2DDS_RET_OK) {
+      if (context_data->localhost_only) {
+        ret = int2dds_participant_qos_set_multicast_ttl(qos, 0);
+      }
+      if (ret == INT2DDS_RET_OK && !context_data->initial_peers.empty()) {
+        ret = int2dds_participant_qos_add_property(
+          qos, "int2dds.initial_peers", context_data->initial_peers.c_str(), false);
+      }
+      if (ret == INT2DDS_RET_OK) {
+        ret = int2dds_create_participant_with_qos(
+          context_data->factory,
+          "rmw_int2dds_participant",
+          static_cast<int32_t>(context_data->domain_id),
+          qos,
+          &context_data->participant);
+      }
+      int2dds_participant_qos_destroy(qos);
+    }
+  }
   if (ret != INT2DDS_RET_OK) {
     context_data->participant = nullptr;
     release_context_resources(context_data);
@@ -274,6 +374,19 @@ rmw_init(const rmw_init_options_t * options, rmw_context_t * context)
     actual_domain_id = 0;  // Default to domain 0
   }
   context_data->domain_id = actual_domain_id;
+  // Translate any user-specified static peers into the int2dds SPDP initial-peers
+  // list once, while both the domain id and discovery options are in hand. Stored
+  // on the context so the rmw_create_node re-acquire path reuses the same config.
+#ifdef RMW_INT2DDS_HAS_DISCOVERY_OPTIONS
+  context_data->initial_peers = rmw_int2dds_cpp::build_initial_peers_string(
+    options->discovery_options, actual_domain_id);
+  context_data->localhost_only =
+    options->discovery_options.automatic_discovery_range ==
+    RMW_AUTOMATIC_DISCOVERY_RANGE_LOCALHOST;
+#elif __has_include("rmw/localhost.h")
+  // Older distros (Humble) express localhost-only via the init-options field.
+  context_data->localhost_only = options->localhost_only == RMW_LOCALHOST_ONLY_ENABLED;
+#endif
 
   if (rmw_int2dds_cpp::acquire_context_resources(context_data, options->enclave) != RMW_RET_OK) {
     delete context_data;
