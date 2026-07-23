@@ -725,6 +725,17 @@ rmw_create_subscription(
     return nullptr;
   }
 
+  // int2dds does not expose per-endpoint network flows (see
+  // rmw_subscription_get_network_flow_endpoints), so a strict requirement for
+  // unique ones cannot be honoured and must be reported as an error rather than
+  // silently ignored.
+  if (subscription_options->require_unique_network_flow_endpoints ==
+    RMW_UNIQUE_NETWORK_FLOW_ENDPOINTS_STRICTLY_REQUIRED)
+  {
+    RMW_SET_ERROR_MSG("Unique network flow endpoints are not supported by rmw_int2dds_cpp");
+    return nullptr;
+  }
+
   if (!qos_policies->avoid_ros_namespace_conventions) {
     int validation_result = 0;
     rmw_ret_t ret = rmw_validate_full_topic_name(topic_name, &validation_result, nullptr);
