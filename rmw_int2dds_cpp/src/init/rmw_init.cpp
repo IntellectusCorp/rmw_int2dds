@@ -76,11 +76,31 @@ acquire_context_resources(ContextData * context_data, const char * enclave)
     return RMW_RET_ERROR;
   }
 
-  ret = int2dds_create_participant(
-    context_data->factory,
-    "rmw_int2dds_participant",
-    static_cast<int32_t>(context_data->domain_id),
-    &context_data->participant);
+  if (!context_data->localhost_only) {
+    ret = int2dds_create_participant(
+      context_data->factory,
+      "rmw_int2dds_participant",
+      static_cast<int32_t>(context_data->domain_id),
+      &context_data->participant);
+  } else {
+    // localhost_only: multicast_ttl=0 keeps multicast SPDP on the host, so remote
+    // hosts cannot auto-discover us (local discovery is unaffected). A plain
+    // property; no core change or optional feature plugin.
+    Int2DdsParticipantQos * qos = nullptr;
+    ret = int2dds_participant_qos_create_default(&qos);
+    if (ret == INT2DDS_RET_OK) {
+      ret = int2dds_participant_qos_set_multicast_ttl(qos, 0);
+      if (ret == INT2DDS_RET_OK) {
+        ret = int2dds_create_participant_with_qos(
+          context_data->factory,
+          "rmw_int2dds_participant",
+          static_cast<int32_t>(context_data->domain_id),
+          qos,
+          &context_data->participant);
+      }
+      int2dds_participant_qos_destroy(qos);
+    }
+  }
   if (ret != INT2DDS_RET_OK) {
     context_data->participant = nullptr;
     release_context_resources(context_data);
@@ -249,6 +269,10 @@ rmw_init(const rmw_init_options_t * options, rmw_context_t * context)
     actual_domain_id = 0;  // Default to domain 0
   }
   context_data->domain_id = actual_domain_id;
+#if __has_include("rmw/localhost.h")
+  // Humble expresses localhost-only via the init-options localhost_only field.
+  context_data->localhost_only = options->localhost_only == RMW_LOCALHOST_ONLY_ENABLED;
+#endif
 
   if (rmw_int2dds_cpp::acquire_context_resources(context_data, options->enclave) != RMW_RET_OK) {
     delete context_data;

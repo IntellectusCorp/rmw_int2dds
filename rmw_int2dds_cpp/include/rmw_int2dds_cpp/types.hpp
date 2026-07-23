@@ -92,6 +92,10 @@ struct ContextData
   Int2DdsDataReader * discovery_reader{nullptr};
 
   size_t domain_id{0};
+  // True when the user requested localhost-only discovery (Humble: the init-options
+  // localhost_only field). Applied via multicast_ttl=0 so multicast SPDP stays on
+  // the host; local discovery is unaffected. Set in rmw_init.
+  bool localhost_only{false};
   bool is_shutdown{false};
   std::atomic<int> ref_count{0};
   std::mutex mutex;
