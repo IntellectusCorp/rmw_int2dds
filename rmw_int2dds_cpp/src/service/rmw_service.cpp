@@ -56,6 +56,130 @@ has_unknown_qos_policy(const rmw_qos_profile_t & qos)
          qos.liveliness == RMW_QOS_POLICY_LIVELINESS_UNKNOWN;
 }
 
+// Duration/liveliness helpers mirrored from rmw_create_publisher/subscription so
+// services/clients apply deadline, lifespan and liveliness to the DDS entities
+// instead of dropping them (they used to set only reliability/durability/history).
+bool
+is_unspecified_duration(const rmw_time_t & duration)
+{
+  const rmw_time_t unspecified = RMW_DURATION_UNSPECIFIED;
+  return duration.sec == unspecified.sec && duration.nsec == unspecified.nsec;
+}
+
+bool
+is_best_available_deadline(const rmw_time_t & duration)
+{
+#ifdef RMW_QOS_DEADLINE_BEST_AVAILABLE
+  const rmw_time_t best_available = RMW_QOS_DEADLINE_BEST_AVAILABLE;
+  return duration.sec == best_available.sec && duration.nsec == best_available.nsec;
+#else
+  (void)duration;
+  return false;
+#endif
+}
+
+bool
+is_explicit_liveliness_policy(rmw_qos_liveliness_policy_t liveliness)
+{
+  if (liveliness == RMW_QOS_POLICY_LIVELINESS_SYSTEM_DEFAULT ||
+    liveliness == RMW_QOS_POLICY_LIVELINESS_UNKNOWN)
+  {
+    return false;
+  }
+#ifdef RMW_QOS_DEADLINE_BEST_AVAILABLE
+  if (liveliness == RMW_QOS_POLICY_LIVELINESS_BEST_AVAILABLE) {
+    return false;
+  }
+#endif
+  return true;
+}
+
+int32_t
+liveliness_to_int2dds(rmw_qos_liveliness_policy_t liveliness)
+{
+  switch (liveliness) {
+// ROS 2 Lyrical removed the deprecated MANUAL_BY_NODE policy; detect via a header
+// introduced in the same release (enum values are invisible to __has_include).
+#if !__has_include("rmw/get_service_endpoint_info.h")
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+    case RMW_QOS_POLICY_LIVELINESS_MANUAL_BY_NODE:
+#pragma GCC diagnostic pop
+      return INT2DDS_QOS_LIVELINESS_MANUAL_BY_PARTICIPANT;
+#endif
+    case RMW_QOS_POLICY_LIVELINESS_MANUAL_BY_TOPIC:
+      return INT2DDS_QOS_LIVELINESS_MANUAL_BY_TOPIC;
+    case RMW_QOS_POLICY_LIVELINESS_AUTOMATIC:
+    default:
+      return INT2DDS_QOS_LIVELINESS_AUTOMATIC;
+  }
+}
+
+int64_t
+duration_to_ns(const rmw_time_t & duration)
+{
+  return static_cast<int64_t>(duration.sec) * 1000000000LL + static_cast<int64_t>(duration.nsec);
+}
+
+void
+set_writer_deadline_lifespan_liveliness(
+  Int2DdsDataWriterQos * writer_qos, const rmw_qos_profile_t & qos)
+{
+  if (!is_unspecified_duration(qos.deadline) && !is_best_available_deadline(qos.deadline)) {
+    int2dds_datawriter_qos_set_deadline(writer_qos, duration_to_ns(qos.deadline));
+  }
+  if (!is_unspecified_duration(qos.lifespan)) {
+    int2dds_datawriter_qos_set_lifespan(writer_qos, duration_to_ns(qos.lifespan));
+  }
+  if (is_explicit_liveliness_policy(qos.liveliness) ||
+    !is_unspecified_duration(qos.liveliness_lease_duration))
+  {
+    int32_t liveliness_kind = INT2DDS_QOS_LIVELINESS_AUTOMATIC;
+    int64_t lease_duration_ns = 0;
+    if (int2dds_datawriter_qos_get_liveliness(
+        writer_qos, &liveliness_kind, &lease_duration_ns) != INT2DDS_RET_OK)
+    {
+      liveliness_kind = INT2DDS_QOS_LIVELINESS_AUTOMATIC;
+      lease_duration_ns = 0;
+    }
+    if (is_explicit_liveliness_policy(qos.liveliness)) {
+      liveliness_kind = liveliness_to_int2dds(qos.liveliness);
+    }
+    if (!is_unspecified_duration(qos.liveliness_lease_duration)) {
+      lease_duration_ns = duration_to_ns(qos.liveliness_lease_duration);
+    }
+    int2dds_datawriter_qos_set_liveliness(writer_qos, liveliness_kind, lease_duration_ns);
+  }
+}
+
+void
+set_reader_deadline_liveliness(
+  Int2DdsDataReaderQos * reader_qos, const rmw_qos_profile_t & qos)
+{
+  if (!is_unspecified_duration(qos.deadline) && !is_best_available_deadline(qos.deadline)) {
+    int2dds_datareader_qos_set_deadline(reader_qos, duration_to_ns(qos.deadline));
+  }
+  if (is_explicit_liveliness_policy(qos.liveliness) ||
+    !is_unspecified_duration(qos.liveliness_lease_duration))
+  {
+    int32_t liveliness_kind = INT2DDS_QOS_LIVELINESS_AUTOMATIC;
+    int64_t lease_duration_ns = 0;
+    if (int2dds_datareader_qos_get_liveliness(
+        reader_qos, &liveliness_kind, &lease_duration_ns) != INT2DDS_RET_OK)
+    {
+      liveliness_kind = INT2DDS_QOS_LIVELINESS_AUTOMATIC;
+      lease_duration_ns = 0;
+    }
+    if (is_explicit_liveliness_policy(qos.liveliness)) {
+      liveliness_kind = liveliness_to_int2dds(qos.liveliness);
+    }
+    if (!is_unspecified_duration(qos.liveliness_lease_duration)) {
+      lease_duration_ns = duration_to_ns(qos.liveliness_lease_duration);
+    }
+    int2dds_datareader_qos_set_liveliness(reader_qos, liveliness_kind, lease_duration_ns);
+  }
+}
+
 void
 set_writer_history(Int2DdsDataWriterQos * writer_qos, const rmw_qos_profile_t & qos)
 {
@@ -253,6 +377,7 @@ rmw_create_service(
     rmw_int2dds_cpp::encode_service_request_type_hash_user_data(introspection_ts) +
     rmw_int2dds_cpp::encode_service_type_hash_user_data(introspection_ts));
   set_reader_reliability_durability(reader_qos, srv_data->qos);
+  set_reader_deadline_liveliness(reader_qos, srv_data->qos);
   set_reader_history(reader_qos, srv_data->qos);
 
   // Create request DataReader
@@ -279,6 +404,7 @@ rmw_create_service(
     rmw_int2dds_cpp::encode_service_response_type_hash_user_data(introspection_ts) +
     rmw_int2dds_cpp::encode_service_type_hash_user_data(introspection_ts));
   set_writer_reliability_durability(writer_qos, srv_data->qos);
+  set_writer_deadline_lifespan_liveliness(writer_qos, srv_data->qos);
   set_writer_history(writer_qos, srv_data->qos);
 
   // Create response DataWriter
