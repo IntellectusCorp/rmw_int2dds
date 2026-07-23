@@ -267,12 +267,12 @@ rmw_init(const rmw_init_options_t * options, rmw_context_t * context)
   // Copy options
   rmw_ret_t rmw_ret = rmw_init_options_copy(options, &context->options);
   if (rmw_ret != RMW_RET_OK) {
-    // Clean up on failure
-    int2dds_guard_condition_delete(context_data->graph_guard_condition);
-    int2dds_delete_subscriber(context_data->default_subscriber);
-    int2dds_delete_publisher(context_data->default_publisher);
-    int2dds_delete_participant(context_data->participant);
-    int2dds_domain_participant_factory_finalize(context_data->factory);
+    // Clean up on failure. Use the shared teardown so the discovery listener
+    // thread is stopped and joined (skipping it would std::terminate when the
+    // Context's joinable thread is destroyed) and the participant's contained
+    // entities are deleted before the participant itself (otherwise it is
+    // orphaned with PRECONDITION_NOT_MET, leaking sockets/eventfds/epoll).
+    rmw_int2dds_cpp::release_context_resources(context_data);
     delete context_data;
     context->impl = nullptr;
     return rmw_ret;
