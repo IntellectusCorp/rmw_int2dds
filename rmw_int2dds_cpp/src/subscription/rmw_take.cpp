@@ -130,6 +130,9 @@ fill_message_info_from_sample(
   std::ignore = rcutils_system_time_now(&message_info->received_timestamp);
   message_info->publication_sequence_number = RMW_MESSAGE_INFO_SEQUENCE_NUMBER_UNSUPPORTED;
   message_info->reception_sequence_number = reception_sequence;
+  // int2dds has no intra-process transport and its SampleInfo carries no
+  // intra-process flag, so a received sample is never intra-process. This is the
+  // single point to revisit if int2dds ever gains an intra-process delivery path.
   message_info->from_intra_process = false;
   memset(message_info->publisher_gid.data, 0, RMW_GID_STORAGE_SIZE);
   message_info->publisher_gid.implementation_identifier =
