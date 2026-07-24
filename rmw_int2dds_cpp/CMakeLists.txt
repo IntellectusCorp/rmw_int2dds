@@ -39,6 +39,7 @@ find_package(rosidl_typesupport_cpp REQUIRED)
 find_package(rmw_dds_common REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(std_msgs REQUIRED)
+find_package(rcl QUIET)
 
 # ============================================================================
 # int2dds-ffi library
@@ -154,6 +155,18 @@ register_rmw_implementation(
 add_executable(test_connection test/test_connection.cpp)
 target_include_directories(test_connection PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(test_connection int2dds_ffi::int2dds_ffi ${PLATFORM_LIBS})
+
+# D4: batch take_sequence functional check.
+if(rcl_FOUND)
+  add_executable(test_take_sequence test/test_take_sequence.cpp)
+  target_include_directories(test_take_sequence PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+  target_link_libraries(test_take_sequence
+    rclcpp::rclcpp
+    rcl::rcl
+    ${std_msgs_TARGETS}
+    rmw_int2dds_cpp
+  )
+endif()
 
 if(RMW_INT2DDS_BUILD_MATCHED_EVENT_TESTS)
   add_executable(test_event_smoke test/test_event_smoke.cpp)
