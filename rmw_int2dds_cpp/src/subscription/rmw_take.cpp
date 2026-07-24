@@ -24,6 +24,7 @@
 #include "rmw/rmw.h"
 #if __has_include("rmw/dynamic_message_type_support.h")
 #include "rmw/dynamic_message_type_support.h"
+#include "rosidl_dynamic_typesupport/api/dynamic_data.h"
 #define RMW_INT2DDS_HAS_DYNAMIC_MESSAGE_TYPE_SUPPORT 1
 #endif
 #include "rmw/error_handling.h"
@@ -396,6 +397,56 @@ take_serialized_message_internal(
   return RMW_RET_OK;
 }
 
+#ifdef RMW_INT2DDS_HAS_DYNAMIC_MESSAGE_TYPE_SUPPORT
+// Take the next sample as raw CDR (reusing the serialized receive path) and deserialize
+// it into the caller's dynamic message through the serialization-support vtable
+// (rosidl_dynamic_typesupport_dynamic_data_deserialize -> our int2dds backend). The
+// dynamic message must already carry its type (built via the same serialization support).
+rmw_ret_t
+take_dynamic_message_internal(
+  const rmw_subscription_t * subscription,
+  rosidl_dynamic_typesupport_dynamic_data_t * dynamic_message,
+  bool * taken,
+  rmw_message_info_t * message_info)
+{
+  if (subscription == nullptr || dynamic_message == nullptr || taken == nullptr) {
+    RMW_SET_ERROR_MSG("invalid argument to rmw_take_dynamic_message");
+    return RMW_RET_INVALID_ARGUMENT;
+  }
+  *taken = false;
+
+  rmw_serialized_message_t serialized = rmw_get_zero_initialized_serialized_message();
+  rcutils_allocator_t allocator = rcutils_get_default_allocator();
+  rmw_ret_t init_ret = rmw_serialized_message_init(&serialized, 0u, &allocator);
+  if (init_ret != RMW_RET_OK) {
+    return init_ret;
+  }
+
+  bool serialized_taken = false;
+  rmw_ret_t take_ret =
+    take_serialized_message_internal(subscription, &serialized, &serialized_taken, message_info);
+  if (take_ret != RMW_RET_OK) {
+    (void)rmw_serialized_message_fini(&serialized);
+    return take_ret;
+  }
+  if (!serialized_taken) {
+    (void)rmw_serialized_message_fini(&serialized);
+    return RMW_RET_OK;  // no data available; *taken stays false
+  }
+
+  rcutils_ret_t des_ret =
+    rosidl_dynamic_typesupport_dynamic_data_deserialize(dynamic_message, &serialized);
+  (void)rmw_serialized_message_fini(&serialized);
+  if (des_ret != RCUTILS_RET_OK) {
+    RMW_SET_ERROR_MSG("failed to deserialize dynamic message");
+    return RMW_RET_ERROR;
+  }
+
+  *taken = true;
+  return RMW_RET_OK;
+}
+#endif  // RMW_INT2DDS_HAS_DYNAMIC_MESSAGE_TYPE_SUPPORT
+
 }  // namespace
 
 extern "C"
@@ -606,13 +657,8 @@ rmw_take_dynamic_message(
   bool * taken,
   rmw_subscription_allocation_t * allocation)
 {
-  (void)subscription;
-  (void)dynamic_message;
-  (void)taken;
   (void)allocation;
-  // Dynamic message type support is not provided by int2dds
-  RMW_SET_ERROR_MSG("rmw_take_dynamic_message is not supported by rmw_int2dds_cpp");
-  return RMW_RET_UNSUPPORTED;
+  return take_dynamic_message_internal(subscription, dynamic_message, taken, nullptr);
 }
 
 rmw_ret_t
@@ -623,14 +669,12 @@ rmw_take_dynamic_message_with_info(
   rmw_message_info_t * message_info,
   rmw_subscription_allocation_t * allocation)
 {
-  (void)subscription;
-  (void)dynamic_message;
-  (void)taken;
-  (void)message_info;
   (void)allocation;
-  // Dynamic message type support is not provided by int2dds
-  RMW_SET_ERROR_MSG("rmw_take_dynamic_message_with_info is not supported by rmw_int2dds_cpp");
-  return RMW_RET_UNSUPPORTED;
+  if (message_info == nullptr) {
+    RMW_SET_ERROR_MSG("message_info is null");
+    return RMW_RET_INVALID_ARGUMENT;
+  }
+  return take_dynamic_message_internal(subscription, dynamic_message, taken, message_info);
 }
 #endif
 }  // extern "C"

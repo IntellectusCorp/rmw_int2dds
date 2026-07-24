@@ -17,6 +17,8 @@
 #include "rmw/rmw.h"
 #if __has_include("rmw/dynamic_message_type_support.h")
 #include "rmw/dynamic_message_type_support.h"
+#include "rosidl_dynamic_typesupport/api/serialization_support.h"
+#include "rmw_int2dds_cpp/dynamic_serialization_support.hpp"
 #define RMW_INT2DDS_HAS_DYNAMIC_MESSAGE_TYPE_SUPPORT 1
 #endif
 #include "rmw/error_handling.h"
@@ -568,11 +570,32 @@ rmw_serialization_support_init(
   rosidl_dynamic_typesupport_serialization_support_t * serialization_support)
 {
   (void)serialization_lib_name;
-  (void)allocator;
-  (void)serialization_support;
-  // Dynamic message type support is not provided by int2dds
-  RMW_SET_ERROR_MSG("rmw_serialization_support_init is not supported by rmw_int2dds_cpp");
-  return RMW_RET_UNSUPPORTED;
+  RMW_CHECK_ARGUMENT_FOR_NULL(allocator, RMW_RET_INVALID_ARGUMENT);
+  RMW_CHECK_ARGUMENT_FOR_NULL(serialization_support, RMW_RET_INVALID_ARGUMENT);
+
+  rosidl_dynamic_typesupport_serialization_support_impl_t impl;
+  if (rmw_int2dds_cpp::init_dynamic_serialization_support_impl(allocator, &impl) !=
+    RCUTILS_RET_OK)
+  {
+    RMW_SET_ERROR_MSG("failed to init int2dds dynamic serialization support impl");
+    return RMW_RET_ERROR;
+  }
+
+  rosidl_dynamic_typesupport_serialization_support_interface_t methods;
+  if (rmw_int2dds_cpp::init_dynamic_serialization_support_interface(allocator, &methods) !=
+    RCUTILS_RET_OK)
+  {
+    RMW_SET_ERROR_MSG("failed to init int2dds dynamic serialization support interface");
+    return RMW_RET_ERROR;
+  }
+
+  if (rosidl_dynamic_typesupport_serialization_support_init(
+      &impl, &methods, allocator, serialization_support) != RCUTILS_RET_OK)
+  {
+    RMW_SET_ERROR_MSG("rosidl_dynamic_typesupport_serialization_support_init failed");
+    return RMW_RET_ERROR;
+  }
+  return RMW_RET_OK;
 }
 #endif
 }  // extern "C"
