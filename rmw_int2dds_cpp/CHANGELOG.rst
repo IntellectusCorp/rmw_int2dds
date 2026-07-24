@@ -4,7 +4,22 @@ Changelog for package rmw_int2dds_cpp
 
 Forthcoming
 -----------
-* No changes yet.
+* Fix participant/context lifecycle: delete contained entities before the
+  participant, release the participant when the last node is destroyed,
+  recreate context DDS resources on node creation, and release all context
+  resources on init failure.
+* Apply requested QoS in services/clients; resolve BEST_AVAILABLE and
+  SYSTEM_DEFAULT in the service actual QoS; apply deadline/liveliness.
+* Wire localhost-only and static-peer discovery into SPDP.
+* Reject STRICTLY_REQUIRED unique network flow endpoints; restore content-filter
+  field codes; set error messages on unsupported API stubs; ignore only
+  same-node local publications; randomize the GID process field.
+* Add dynamic message type support (rosidl dynamic typesupport): primitives,
+  string, fixed arrays, sequences and nested structs.
+* Batch ``take_sequence`` into a single serialized take.
+* Move development test executables into ``test/``; align QUALITY_DECLARATION
+  and README test status with the current state.
+* Contributors: Intellectus Corp.
 
 0.0.1 (2026-06-25)
 ------------------
