@@ -169,6 +169,48 @@ is_local_publication(
   return false;
 }
 
+/// Deserialize a full serialized CDR sample (including its 4-byte encapsulation
+/// header) into a typed ROS message using the subscription's introspection
+/// typesupport. Shared by the single take and the batch take_sequence path.
+rmw_ret_t
+deserialize_cdr_into_message(
+  const rmw_int2dds_cpp::SubscriptionData * sub_data,
+  const uint8_t * serialized_data,
+  size_t data_size,
+  void * ros_message)
+{
+  if (data_size < 4 || serialized_data == nullptr) {
+    RMW_SET_ERROR_MSG("received data too small for CDR header");
+    return RMW_RET_ERROR;
+  }
+  // Create deserializer starting after the CDR encapsulation header (4 bytes)
+  rmw_int2dds_cpp::CdrDeserializer deserializer(serialized_data + 4, data_size - 4);
+  bool deserialize_success = false;
+  if (sub_data->type_support->typesupport_identifier ==
+    rosidl_typesupport_introspection_c__identifier)
+  {
+    const auto * members = static_cast<
+      const rosidl_typesupport_introspection_c__MessageMembers *>(
+      sub_data->type_support->data);
+    deserialize_success = deserializer.deserialize_message_c(ros_message, members);
+  } else if (sub_data->type_support->typesupport_identifier ==  // NOLINT(readability/braces)
+    rosidl_typesupport_introspection_cpp::typesupport_identifier)
+  {
+    const auto * members = static_cast<
+      const rosidl_typesupport_introspection_cpp::MessageMembers *>(
+      sub_data->type_support->data);
+    deserialize_success = deserializer.deserialize_message_cpp(ros_message, members);
+  } else {
+    RMW_SET_ERROR_MSG("unknown type support identifier");
+    return RMW_RET_ERROR;
+  }
+  if (!deserialize_success) {
+    RMW_SET_ERROR_MSG("failed to deserialize message");
+    return RMW_RET_ERROR;
+  }
+  return RMW_RET_OK;
+}
+
 /// Helper function to take a single message from a subscription
 /// Returns RMW_RET_OK if data was taken, RMW_RET_ERROR on error
 /// Sets *taken to true if data was actually received
@@ -257,44 +299,15 @@ take_message_internal(
     return RMW_RET_OK;
   }
 
-  // Data received - skip CDR encapsulation header (4 bytes)
-  if (data_size < 4 || serialized_data == nullptr) {
-    RMW_SET_ERROR_MSG("received data too small for CDR header");
-    return RMW_RET_ERROR;
-  }
-
-  // Create deserializer starting after CDR header
-  rmw_int2dds_cpp::CdrDeserializer deserializer(
-    serialized_data + 4, data_size - 4);
-
-  // Deserialize based on type support
-  bool deserialize_success = false;
+  // Deserialize the serialized sample into the typed message (shared helper).
   const uint64_t deserialize_t0 = profile ? now_us() : 0;
-  if (sub_data->type_support->typesupport_identifier ==
-    rosidl_typesupport_introspection_c__identifier)
-  {
-    const auto * members = static_cast<
-      const rosidl_typesupport_introspection_c__MessageMembers *>(
-      sub_data->type_support->data);
-    deserialize_success = deserializer.deserialize_message_c(ros_message, members);
-  } else if (sub_data->type_support->typesupport_identifier ==  // NOLINT(readability/braces)
-    rosidl_typesupport_introspection_cpp::typesupport_identifier)
-  {
-    const auto * members = static_cast<
-      const rosidl_typesupport_introspection_cpp::MessageMembers *>(
-      sub_data->type_support->data);
-    deserialize_success = deserializer.deserialize_message_cpp(ros_message, members);
-  } else {
-    RMW_SET_ERROR_MSG("unknown type support identifier");
-    return RMW_RET_ERROR;
-  }
+  const rmw_ret_t deser_ret = deserialize_cdr_into_message(
+    sub_data, serialized_data, data_size, ros_message);
   if (profile) {
     deserialize_us = now_us() - deserialize_t0;
   }
-
-  if (!deserialize_success) {
-    RMW_SET_ERROR_MSG("failed to deserialize message");
-    return RMW_RET_ERROR;
+  if (deser_ret != RMW_RET_OK) {
+    return deser_ret;
   }
 
   *taken = true;
@@ -533,25 +546,83 @@ rmw_take_sequence(
 
   *taken = 0;
 
-  for (size_t i = 0; i < count; ++i) {
-    bool message_taken = false;
-    rmw_ret_t ret = take_message_internal(
-      subscription,
-      message_sequence->data[i],
-      &message_taken,
-      &message_info_sequence->data[i]);
+  auto * sub_data = static_cast<rmw_int2dds_cpp::SubscriptionData *>(subscription->data);
+  if (sub_data == nullptr || sub_data->datareader == nullptr) {
+    RMW_SET_ERROR_MSG("subscription data is null");
+    return RMW_RET_ERROR;
+  }
 
-    if (ret != RMW_RET_OK) {
-      return ret;
+  // A single DDS take for up to `count` samples -- a true batch instead of `count`
+  // separate single takes. Every returned sample is consumed by this one call, so a
+  // filtered-out sample (invalid, or same-node when ignore_local_publications) is
+  // skipped in place rather than truncating the rest of the batch.
+  std::lock_guard<std::mutex> buffer_lock(sub_data->take_buffer_mutex);
+  if (sub_data->take_buffer.size() < DEFAULT_RECEIVE_BUFFER_SIZE) {
+    sub_data->take_buffer.resize(DEFAULT_RECEIVE_BUFFER_SIZE);
+  }
+
+  Int2DdsSampleSeq * seq = nullptr;
+  Int2DdsRet ret = int2dds_take_serialized_batch(
+    sub_data->datareader, static_cast<int32_t>(count), &seq);
+  if (ret == INT2DDS_RET_NO_DATA || seq == nullptr) {
+    if (seq != nullptr) {
+      int2dds_sample_seq_delete(seq);
+    }
+    message_sequence->size = 0;
+    message_info_sequence->size = 0;
+    return RMW_RET_OK;
+  }
+  if (ret != INT2DDS_RET_OK) {
+    RMW_SET_ERROR_MSG("failed to batch-take from DDS");
+    return RMW_RET_ERROR;
+  }
+
+  const uintptr_t available = int2dds_sample_seq_length(seq);
+  for (uintptr_t i = 0; i < available && *taken < count; ++i) {
+    Int2DdsSampleInfo sample_info;
+    std::memset(&sample_info, 0, sizeof(sample_info));
+    if (int2dds_sample_seq_get_info(seq, i, &sample_info) != INT2DDS_RET_OK) {
+      continue;
+    }
+    if (!sample_info.valid_data) {
+      continue;  // disposed / no-data instance
+    }
+    if (subscription->options.ignore_local_publications &&
+      is_local_publication(sub_data, sample_info))
+    {
+      continue;  // drop only this node's own publications (A2)
     }
 
-    if (!message_taken) {
-      // No more messages available
-      break;
+    uintptr_t actual_size = 0;
+    Int2DdsRet dret = int2dds_sample_seq_get_data(
+      seq, i, sub_data->take_buffer.data(), sub_data->take_buffer.size(), &actual_size);
+    if (dret != INT2DDS_RET_OK && actual_size > sub_data->take_buffer.size()) {
+      sub_data->take_buffer.resize(actual_size + 256);
+      dret = int2dds_sample_seq_get_data(
+        seq, i, sub_data->take_buffer.data(), sub_data->take_buffer.size(), &actual_size);
+    }
+    if (dret != INT2DDS_RET_OK) {
+      int2dds_sample_seq_delete(seq);
+      RMW_SET_ERROR_MSG("failed to read batch sample data");
+      return RMW_RET_ERROR;
     }
 
+    const rmw_ret_t deser_ret = deserialize_cdr_into_message(
+      sub_data, sub_data->take_buffer.data(), actual_size,
+      message_sequence->data[*taken]);
+    if (deser_ret != RMW_RET_OK) {
+      int2dds_sample_seq_delete(seq);
+      return deser_ret;
+    }
+
+    sub_data->reception_sequence.fetch_add(1);
+    fill_message_info_from_sample(
+      &message_info_sequence->data[*taken],
+      &sample_info,
+      sub_data->reception_sequence.load());
     (*taken)++;
   }
+  int2dds_sample_seq_delete(seq);
 
   message_sequence->size = *taken;
   message_info_sequence->size = *taken;
