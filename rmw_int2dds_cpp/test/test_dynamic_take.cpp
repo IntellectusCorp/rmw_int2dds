@@ -86,7 +86,9 @@ int main(int argc, char ** argv)
     rosidl_dynamic_typesupport_dynamic_data_t data =
       rosidl_dynamic_typesupport_get_zero_initialized_dynamic_data();
     rcutils_ret_t rc = RCUTILS_RET_OK;
-#define STEP(call) do {if (rc == RCUTILS_RET_OK) {rc = (call);}} while (0)
+#define STEP(call) do {if (rc == RCUTILS_RET_OK) {rc = (call);} \
+} \
+  while (0)
     STEP(rosidl_dynamic_typesupport_dynamic_type_builder_init(
         &ss, "diagnostic_msgs::msg::KeyValue", 30, &alloc, &bld));
     STEP(rosidl_dynamic_typesupport_dynamic_type_builder_add_string_member(

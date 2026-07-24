@@ -170,21 +170,22 @@ Int2DdsRet probe_path(const DataHandle * d, const std::string & path, int code)
   size_t n = d->bytes->size();
   const char * p = path.c_str();
 #define PROBE_CASE(CODE, CTYPE, GETTER) \
-  case CODE: {CTYPE v; return GETTER(b, n, d->obj, p, &v);}
+    case CODE: {CTYPE v; return GETTER(b, n, d->obj, p, &v); \
+    }
   switch (code) {
-    PROBE_CASE(INT2DDS_FIELD_BOOL, bool, int2dds_dynamic_sample_get_bool)
-    PROBE_CASE(INT2DDS_FIELD_BYTE, uint8_t, int2dds_dynamic_sample_get_byte)
-    PROBE_CASE(INT2DDS_FIELD_CHAR8, uint8_t, int2dds_dynamic_sample_get_char8)
-    PROBE_CASE(INT2DDS_FIELD_INT8, int8_t, int2dds_dynamic_sample_get_i8)
-    PROBE_CASE(INT2DDS_FIELD_UINT8, uint8_t, int2dds_dynamic_sample_get_u8)
-    PROBE_CASE(INT2DDS_FIELD_INT16, int16_t, int2dds_dynamic_sample_get_i16)
-    PROBE_CASE(INT2DDS_FIELD_UINT16, uint16_t, int2dds_dynamic_sample_get_u16)
-    PROBE_CASE(INT2DDS_FIELD_INT32, int32_t, int2dds_dynamic_sample_get_i32)
-    PROBE_CASE(INT2DDS_FIELD_UINT32, uint32_t, int2dds_dynamic_sample_get_u32)
-    PROBE_CASE(INT2DDS_FIELD_INT64, int64_t, int2dds_dynamic_sample_get_i64)
-    PROBE_CASE(INT2DDS_FIELD_UINT64, uint64_t, int2dds_dynamic_sample_get_u64)
-    PROBE_CASE(INT2DDS_FIELD_FLOAT32, float, int2dds_dynamic_sample_get_f32)
-    PROBE_CASE(INT2DDS_FIELD_FLOAT64, double, int2dds_dynamic_sample_get_f64)
+  PROBE_CASE(INT2DDS_FIELD_BOOL, bool, int2dds_dynamic_sample_get_bool)
+  PROBE_CASE(INT2DDS_FIELD_BYTE, uint8_t, int2dds_dynamic_sample_get_byte)
+  PROBE_CASE(INT2DDS_FIELD_CHAR8, uint8_t, int2dds_dynamic_sample_get_char8)
+  PROBE_CASE(INT2DDS_FIELD_INT8, int8_t, int2dds_dynamic_sample_get_i8)
+  PROBE_CASE(INT2DDS_FIELD_UINT8, uint8_t, int2dds_dynamic_sample_get_u8)
+  PROBE_CASE(INT2DDS_FIELD_INT16, int16_t, int2dds_dynamic_sample_get_i16)
+  PROBE_CASE(INT2DDS_FIELD_UINT16, uint16_t, int2dds_dynamic_sample_get_u16)
+  PROBE_CASE(INT2DDS_FIELD_INT32, int32_t, int2dds_dynamic_sample_get_i32)
+  PROBE_CASE(INT2DDS_FIELD_UINT32, uint32_t, int2dds_dynamic_sample_get_u32)
+  PROBE_CASE(INT2DDS_FIELD_INT64, int64_t, int2dds_dynamic_sample_get_i64)
+  PROBE_CASE(INT2DDS_FIELD_UINT64, uint64_t, int2dds_dynamic_sample_get_u64)
+  PROBE_CASE(INT2DDS_FIELD_FLOAT32, float, int2dds_dynamic_sample_get_f32)
+  PROBE_CASE(INT2DDS_FIELD_FLOAT64, double, int2dds_dynamic_sample_get_f64)
     case INT2DDS_FIELD_STRING: {
         char probe[1] = {0};
         size_t needed = 0;
