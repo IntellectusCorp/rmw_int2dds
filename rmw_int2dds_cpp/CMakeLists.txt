@@ -218,6 +218,18 @@ if(rosidl_dynamic_typesupport_FOUND AND diagnostic_msgs_FOUND AND rcl_FOUND)
   )
 endif()
 
+# D4: batch take_sequence functional check.
+if(rcl_FOUND)
+  add_executable(test_take_sequence test/test_take_sequence.cpp)
+  target_include_directories(test_take_sequence PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+  target_link_libraries(test_take_sequence
+    rclcpp::rclcpp
+    rcl::rcl
+    ${std_msgs_TARGETS}
+    rmw_int2dds_cpp
+  )
+endif()
+
 if(RMW_INT2DDS_BUILD_MATCHED_EVENT_TESTS)
   add_executable(test_event_smoke test/test_event_smoke.cpp)
   target_include_directories(test_event_smoke PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
