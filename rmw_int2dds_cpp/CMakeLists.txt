@@ -151,12 +151,12 @@ register_rmw_implementation(
 # ============================================================================
 # Test connection executable (for development testing)
 # ============================================================================
-add_executable(test_connection src/test_connection.cpp)
+add_executable(test_connection test/test_connection.cpp)
 target_include_directories(test_connection PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(test_connection int2dds_ffi::int2dds_ffi ${PLATFORM_LIBS})
 
 if(RMW_INT2DDS_BUILD_MATCHED_EVENT_TESTS)
-  add_executable(test_event_smoke src/test_event_smoke.cpp)
+  add_executable(test_event_smoke test/test_event_smoke.cpp)
   target_include_directories(test_event_smoke PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
   target_link_libraries(test_event_smoke rmw_int2dds_cpp int2dds_ffi::int2dds_ffi ${PLATFORM_LIBS})
   ament_target_dependencies(test_event_smoke
@@ -169,7 +169,7 @@ if(RMW_INT2DDS_BUILD_MATCHED_EVENT_TESTS)
 endif()
 
 if(RMW_INT2DDS_BUILD_EVENT_VALIDATION)
-  add_executable(test_event_validation src/test_event_validation.cpp)
+  add_executable(test_event_validation test/test_event_validation.cpp)
   target_include_directories(test_event_validation PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
   target_link_libraries(test_event_validation rmw_int2dds_cpp int2dds_ffi::int2dds_ffi ${PLATFORM_LIBS})
   ament_target_dependencies(test_event_validation
@@ -454,9 +454,9 @@ if(BUILD_TESTING)
     "${CMAKE_CURRENT_SOURCE_DIR}/THIRD_PARTY_LICENSES.md"
     "${CMAKE_CURRENT_SOURCE_DIR}/TRADEMARK_POLICY.md"
     "${CMAKE_CURRENT_SOURCE_DIR}/include/int2dds-ffi.h"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/test_connection.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/test_event_smoke.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/test_event_validation.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/test_connection.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/test_event_smoke.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/test_event_validation.cpp"
   )
   set(AMENT_LINT_AUTO_FILE_EXCLUDE
     ${RMW_INT2DDS_LINT_EXCLUDE_FILES}
