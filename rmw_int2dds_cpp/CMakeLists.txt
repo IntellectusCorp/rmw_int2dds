@@ -36,6 +36,8 @@ find_package(rosidl_typesupport_introspection_c REQUIRED)
 find_package(rosidl_typesupport_introspection_cpp REQUIRED)
 find_package(rosidl_typesupport_c REQUIRED)
 find_package(rosidl_typesupport_cpp REQUIRED)
+# Optional: dynamic message type support (C3). Present on Iron+; absent on Humble.
+find_package(rosidl_dynamic_typesupport QUIET)
 find_package(rmw_dds_common REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(std_msgs REQUIRED)
@@ -105,6 +107,7 @@ add_library(rmw_int2dds_cpp SHARED
 
   # Serialization
   src/serialization/rmw_serialize.cpp
+  src/serialization/dynamic_serialization_support.cpp
   src/serialization/cdr_serializer.cpp
 
   # Common utilities
@@ -140,6 +143,12 @@ ament_target_dependencies(rmw_int2dds_cpp
 )
 
 # Configure as RMW library
+# Dynamic message type support (C3): link when available (Iron+).
+if(rosidl_dynamic_typesupport_FOUND)
+  target_link_libraries(rmw_int2dds_cpp
+    rosidl_dynamic_typesupport::rosidl_dynamic_typesupport)
+endif()
+
 configure_rmw_library(rmw_int2dds_cpp)
 
 # Register RMW implementation
@@ -151,12 +160,79 @@ register_rmw_implementation(
 # ============================================================================
 # Test connection executable (for development testing)
 # ============================================================================
-add_executable(test_connection src/test_connection.cpp)
+add_executable(test_connection test/test_connection.cpp)
 target_include_directories(test_connection PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(test_connection int2dds_ffi::int2dds_ffi ${PLATFORM_LIBS})
+# C3 foundation check: int2dds dynamic type build + primitive sample read.
+add_executable(test_dynamic_message test/test_dynamic_message.cpp)
+target_include_directories(test_dynamic_message PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(test_dynamic_message
+  rclcpp::rclcpp
+  ${std_msgs_TARGETS}
+  int2dds_ffi::int2dds_ffi
+  rmw_int2dds_cpp
+)
+if(rosidl_dynamic_typesupport_FOUND)
+  target_link_libraries(test_dynamic_message
+    rosidl_dynamic_typesupport::rosidl_dynamic_typesupport)
+endif()
+find_package(geometry_msgs QUIET)
+if(geometry_msgs_FOUND)
+  target_link_libraries(test_dynamic_message ${geometry_msgs_TARGETS})
+endif()
+find_package(test_msgs QUIET)
+if(test_msgs_FOUND)
+  target_link_libraries(test_dynamic_message ${test_msgs_TARGETS})
+endif()
+find_package(diagnostic_msgs QUIET)
+if(diagnostic_msgs_FOUND)
+  target_link_libraries(test_dynamic_message ${diagnostic_msgs_TARGETS})
+endif()
+
+# C3 full-flow check: build the dynamic type from a generated TypeDescription (the ROS
+# runtime path) then deserialize and read.
+if(rosidl_dynamic_typesupport_FOUND AND test_msgs_FOUND)
+  add_executable(test_dynamic_fullflow test/test_dynamic_fullflow.cpp)
+  target_include_directories(test_dynamic_fullflow PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+  target_link_libraries(test_dynamic_fullflow
+    rclcpp::rclcpp
+    int2dds_ffi::int2dds_ffi
+    rmw_int2dds_cpp
+    rosidl_dynamic_typesupport::rosidl_dynamic_typesupport
+    ${test_msgs_TARGETS}
+  )
+endif()
+
+# C3 receive-path check: publish then pull back via rmw_take_dynamic_message.
+find_package(rcl QUIET)
+if(rosidl_dynamic_typesupport_FOUND AND diagnostic_msgs_FOUND AND rcl_FOUND)
+  add_executable(test_dynamic_take test/test_dynamic_take.cpp)
+  target_include_directories(test_dynamic_take PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+  target_link_libraries(test_dynamic_take
+    rclcpp::rclcpp
+    rcl::rcl
+    int2dds_ffi::int2dds_ffi
+    rmw_int2dds_cpp
+    rosidl_dynamic_typesupport::rosidl_dynamic_typesupport
+    ${diagnostic_msgs_TARGETS}
+  )
+endif()
+
+
+# D4: batch take_sequence functional check.
+if(rcl_FOUND)
+  add_executable(test_take_sequence test/test_take_sequence.cpp)
+  target_include_directories(test_take_sequence PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+  target_link_libraries(test_take_sequence
+    rclcpp::rclcpp
+    rcl::rcl
+    ${std_msgs_TARGETS}
+    rmw_int2dds_cpp
+  )
+endif()
 
 if(RMW_INT2DDS_BUILD_MATCHED_EVENT_TESTS)
-  add_executable(test_event_smoke src/test_event_smoke.cpp)
+  add_executable(test_event_smoke test/test_event_smoke.cpp)
   target_include_directories(test_event_smoke PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
   target_link_libraries(test_event_smoke rmw_int2dds_cpp int2dds_ffi::int2dds_ffi ${PLATFORM_LIBS})
   ament_target_dependencies(test_event_smoke
@@ -169,7 +245,7 @@ if(RMW_INT2DDS_BUILD_MATCHED_EVENT_TESTS)
 endif()
 
 if(RMW_INT2DDS_BUILD_EVENT_VALIDATION)
-  add_executable(test_event_validation src/test_event_validation.cpp)
+  add_executable(test_event_validation test/test_event_validation.cpp)
   target_include_directories(test_event_validation PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
   target_link_libraries(test_event_validation rmw_int2dds_cpp int2dds_ffi::int2dds_ffi ${PLATFORM_LIBS})
   ament_target_dependencies(test_event_validation
@@ -454,9 +530,9 @@ if(BUILD_TESTING)
     "${CMAKE_CURRENT_SOURCE_DIR}/THIRD_PARTY_LICENSES.md"
     "${CMAKE_CURRENT_SOURCE_DIR}/TRADEMARK_POLICY.md"
     "${CMAKE_CURRENT_SOURCE_DIR}/include/int2dds-ffi.h"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/test_connection.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/test_event_smoke.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/test_event_validation.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/test_connection.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/test_event_smoke.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/test_event_validation.cpp"
   )
   set(AMENT_LINT_AUTO_FILE_EXCLUDE
     ${RMW_INT2DDS_LINT_EXCLUDE_FILES}

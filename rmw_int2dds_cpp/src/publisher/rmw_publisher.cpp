@@ -381,6 +381,16 @@ rmw_create_publisher(
     return nullptr;
   }
 
+  // int2dds does not expose per-endpoint network flows (see
+  // rmw_publisher_get_network_flow_endpoints), so a strict requirement for unique
+  // ones cannot be honoured and must be reported as an error rather than ignored.
+  if (publisher_options->require_unique_network_flow_endpoints ==
+    RMW_UNIQUE_NETWORK_FLOW_ENDPOINTS_STRICTLY_REQUIRED)
+  {
+    RMW_SET_ERROR_MSG("Unique network flow endpoints are not supported by rmw_int2dds_cpp");
+    return nullptr;
+  }
+
   if (!qos_policies->avoid_ros_namespace_conventions) {
     int validation_result = 0;
     rmw_ret_t ret = rmw_validate_full_topic_name(topic_name, &validation_result, nullptr);
@@ -801,6 +811,7 @@ rmw_borrow_loaned_message(
   (void)publisher;
   (void)type_support;
   (void)ros_message;
+  RMW_SET_ERROR_MSG("rmw_borrow_loaned_message is not supported by rmw_int2dds_cpp");
   return RMW_RET_UNSUPPORTED;
 }
 
@@ -811,6 +822,7 @@ rmw_return_loaned_message_from_publisher(
 {
   (void)publisher;
   (void)loaned_message;
+  RMW_SET_ERROR_MSG("rmw_return_loaned_message_from_publisher is not supported by rmw_int2dds_cpp");
   return RMW_RET_UNSUPPORTED;
 }
 
@@ -878,6 +890,7 @@ rmw_publisher_set_on_new_subscription_callback(
   (void)publisher;
   (void)callback;
   (void)user_data;
+  RMW_SET_ERROR_MSG("rmw_publisher_set_on_new_subscription_callback is not supported");
   return RMW_RET_UNSUPPORTED;
 }
 
@@ -891,6 +904,7 @@ rmw_publisher_get_network_flow_endpoints(
   (void)allocator;
   (void)network_flow_endpoint_array;
   // Not supported by int2dds
+  RMW_SET_ERROR_MSG("rmw_publisher_get_network_flow_endpoints is not supported by rmw_int2dds_cpp");
   return RMW_RET_UNSUPPORTED;
 }
 }  // extern "C"
