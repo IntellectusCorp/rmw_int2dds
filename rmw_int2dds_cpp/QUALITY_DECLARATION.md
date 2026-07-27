@@ -45,8 +45,13 @@ All pull requests must have at least one peer review from a maintainer.
 
 ### Continuous Integration [2.iv]
 
-All pull requests must pass CI (build, unit tests, linters) on the tier 1
-platforms targeted by this package before merging.
+All pull requests run the source linters via GitHub Actions
+([`lint.yml`](../.github/workflows/lint.yml)); the build-coupled linters
+(`cpplint`, `uncrustify`, `cppcheck`, `copyright`) run under `colcon test`.
+A full build + unit-test CI on public runners is feasible — the int2DDS FFI
+binary is published on public GitHub Releases — and is planned; until it is
+configured, `test_rmw_implementation` conformance is reproduced manually and
+recorded in the README (see [Test status](../README.md)).
 
 > TODO: add CI badges / links once public CI is configured.
 
@@ -79,7 +84,8 @@ Copyright holders are stated in the header of each source file and in
 The package is tested against the ROS 2 RMW conformance suite
 [`test_rmw_implementation`](https://github.com/ros2/rmw_implementation) with
 `RMW_IMPLEMENTATION=rmw_int2dds_cpp`. System-level behavior is additionally
-exercised via `test_rclcpp` / `system_tests`.
+exercised via `test_rclcpp` / `system_tests`. Per-distribution conformance
+results are recorded in the README [Test status](../README.md) table.
 
 > TODO: link to public test results / CI runs.
 

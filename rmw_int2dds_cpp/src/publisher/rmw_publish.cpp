@@ -332,6 +332,7 @@ rmw_publish_loaned_message(
   (void)publisher;
   (void)ros_message;
   (void)allocation;
+  RMW_SET_ERROR_MSG("rmw_publish_loaned_message is not supported by rmw_int2dds_cpp");
   return RMW_RET_UNSUPPORTED;
 }
 
@@ -344,6 +345,7 @@ rmw_init_publisher_allocation(
   (void)type_support;
   (void)message_bounds;
   (void)allocation;
+  RMW_SET_ERROR_MSG("rmw_init_publisher_allocation is not supported by rmw_int2dds_cpp");
   return RMW_RET_UNSUPPORTED;
 }
 
@@ -351,6 +353,7 @@ rmw_ret_t
 rmw_fini_publisher_allocation(rmw_publisher_allocation_t * allocation)
 {
   (void)allocation;
+  RMW_SET_ERROR_MSG("rmw_fini_publisher_allocation is not supported by rmw_int2dds_cpp");
   return RMW_RET_UNSUPPORTED;
 }
 

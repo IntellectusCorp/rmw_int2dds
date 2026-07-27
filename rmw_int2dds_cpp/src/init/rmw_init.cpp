@@ -25,6 +25,124 @@
 #include "rmw_int2dds_cpp/types.hpp"
 #include "../graph/discovery.hpp"
 
+namespace rmw_int2dds_cpp
+{
+
+void
+release_context_resources(ContextData * context_data)
+{
+  if (context_data == nullptr) {
+    return;
+  }
+
+  if (context_data->common) {
+    fini_discovery(context_data);
+  }
+  if (context_data->graph_guard_condition != nullptr) {
+    int2dds_guard_condition_delete(context_data->graph_guard_condition);
+    context_data->graph_guard_condition = nullptr;
+  }
+  if (context_data->default_subscriber != nullptr) {
+    int2dds_delete_subscriber(context_data->default_subscriber);
+    context_data->default_subscriber = nullptr;
+  }
+  if (context_data->default_publisher != nullptr) {
+    int2dds_delete_publisher(context_data->default_publisher);
+    context_data->default_publisher = nullptr;
+  }
+  if (context_data->participant != nullptr) {
+    int2dds_participant_delete_contained_entities(context_data->participant);
+    int2dds_delete_participant(context_data->participant);
+    context_data->participant = nullptr;
+  }
+  if (context_data->factory != nullptr) {
+    int2dds_domain_participant_factory_finalize(context_data->factory);
+    context_data->factory = nullptr;
+  }
+}
+
+rmw_ret_t
+acquire_context_resources(ContextData * context_data, const char * enclave)
+{
+  if (context_data == nullptr) {
+    RMW_SET_ERROR_MSG("context data is null");
+    return RMW_RET_INVALID_ARGUMENT;
+  }
+
+  Int2DdsRet ret = int2dds_domain_participant_factory_get_instance(&context_data->factory);
+  if (ret != INT2DDS_RET_OK) {
+    context_data->factory = nullptr;
+    RMW_SET_ERROR_MSG("failed to get participant factory");
+    return RMW_RET_ERROR;
+  }
+
+  if (!context_data->localhost_only) {
+    ret = int2dds_create_participant(
+      context_data->factory,
+      "rmw_int2dds_participant",
+      static_cast<int32_t>(context_data->domain_id),
+      &context_data->participant);
+  } else {
+    // localhost_only: multicast_ttl=0 keeps multicast SPDP on the host, so remote
+    // hosts cannot auto-discover us (local discovery is unaffected). A plain
+    // property; no core change or optional feature plugin.
+    Int2DdsParticipantQos * qos = nullptr;
+    ret = int2dds_participant_qos_create_default(&qos);
+    if (ret == INT2DDS_RET_OK) {
+      ret = int2dds_participant_qos_set_multicast_ttl(qos, 0);
+      if (ret == INT2DDS_RET_OK) {
+        ret = int2dds_create_participant_with_qos(
+          context_data->factory,
+          "rmw_int2dds_participant",
+          static_cast<int32_t>(context_data->domain_id),
+          qos,
+          &context_data->participant);
+      }
+      int2dds_participant_qos_destroy(qos);
+    }
+  }
+  if (ret != INT2DDS_RET_OK) {
+    context_data->participant = nullptr;
+    release_context_resources(context_data);
+    RMW_SET_ERROR_MSG("failed to create participant");
+    return RMW_RET_ERROR;
+  }
+
+  ret = int2dds_create_publisher(context_data->participant, &context_data->default_publisher);
+  if (ret != INT2DDS_RET_OK) {
+    context_data->default_publisher = nullptr;
+    release_context_resources(context_data);
+    RMW_SET_ERROR_MSG("failed to create default publisher");
+    return RMW_RET_ERROR;
+  }
+
+  ret = int2dds_create_subscriber(context_data->participant, &context_data->default_subscriber);
+  if (ret != INT2DDS_RET_OK) {
+    context_data->default_subscriber = nullptr;
+    release_context_resources(context_data);
+    RMW_SET_ERROR_MSG("failed to create default subscriber");
+    return RMW_RET_ERROR;
+  }
+
+  ret = int2dds_guard_condition_new(&context_data->graph_guard_condition);
+  if (ret != INT2DDS_RET_OK) {
+    context_data->graph_guard_condition = nullptr;
+    release_context_resources(context_data);
+    RMW_SET_ERROR_MSG("failed to create graph guard condition");
+    return RMW_RET_ERROR;
+  }
+
+  if (init_discovery(context_data, enclave) != RMW_RET_OK) {
+    release_context_resources(context_data);
+    RMW_SET_ERROR_MSG("failed to initialize node-graph discovery");
+    return RMW_RET_ERROR;
+  }
+
+  return RMW_RET_OK;
+}
+
+}  // namespace rmw_int2dds_cpp
+
 extern "C"
 {
 
@@ -145,80 +263,19 @@ rmw_init(const rmw_init_options_t * options, rmw_context_t * context)
     return RMW_RET_BAD_ALLOC;
   }
 
-  // Get domain participant factory
-  Int2DdsRet ret = int2dds_domain_participant_factory_get_instance(&context_data->factory);
-  if (ret != INT2DDS_RET_OK) {
-    delete context_data;
-    RMW_SET_ERROR_MSG("failed to get participant factory");
-    return RMW_RET_ERROR;
-  }
-
   // Determine domain ID before narrowing to the DDS API's integer type.
   size_t actual_domain_id = options->domain_id;
   if (actual_domain_id == RMW_DEFAULT_DOMAIN_ID) {
     actual_domain_id = 0;  // Default to domain 0
   }
   context_data->domain_id = actual_domain_id;
+#if __has_include("rmw/localhost.h")
+  // Humble expresses localhost-only via the init-options localhost_only field.
+  context_data->localhost_only = options->localhost_only == RMW_LOCALHOST_ONLY_ENABLED;
+#endif
 
-  // Create participant
-  ret = int2dds_create_participant(
-    context_data->factory,
-    "rmw_int2dds_participant",
-    static_cast<int32_t>(actual_domain_id),
-    &context_data->participant);
-  if (ret != INT2DDS_RET_OK) {
-    int2dds_domain_participant_factory_finalize(context_data->factory);
+  if (rmw_int2dds_cpp::acquire_context_resources(context_data, options->enclave) != RMW_RET_OK) {
     delete context_data;
-    RMW_SET_ERROR_MSG("failed to create participant");
-    return RMW_RET_ERROR;
-  }
-
-  // Create default publisher
-  ret = int2dds_create_publisher(
-    context_data->participant,
-    &context_data->default_publisher);
-  if (ret != INT2DDS_RET_OK) {
-    int2dds_delete_participant(context_data->participant);
-    int2dds_domain_participant_factory_finalize(context_data->factory);
-    delete context_data;
-    RMW_SET_ERROR_MSG("failed to create default publisher");
-    return RMW_RET_ERROR;
-  }
-
-  // Create default subscriber
-  ret = int2dds_create_subscriber(
-    context_data->participant,
-    &context_data->default_subscriber);
-  if (ret != INT2DDS_RET_OK) {
-    int2dds_delete_publisher(context_data->default_publisher);
-    int2dds_delete_participant(context_data->participant);
-    int2dds_domain_participant_factory_finalize(context_data->factory);
-    delete context_data;
-    RMW_SET_ERROR_MSG("failed to create default subscriber");
-    return RMW_RET_ERROR;
-  }
-
-  // Create graph guard condition
-  ret = int2dds_guard_condition_new(&context_data->graph_guard_condition);
-  if (ret != INT2DDS_RET_OK) {
-    int2dds_delete_subscriber(context_data->default_subscriber);
-    int2dds_delete_publisher(context_data->default_publisher);
-    int2dds_delete_participant(context_data->participant);
-    int2dds_domain_participant_factory_finalize(context_data->factory);
-    delete context_data;
-    RMW_SET_ERROR_MSG("failed to create graph guard condition");
-    return RMW_RET_ERROR;
-  }
-
-  // Stand up standard rmw_dds_common node-graph discovery (ros_discovery_info).
-  if (rmw_int2dds_cpp::init_discovery(context_data, options->enclave) != RMW_RET_OK) {
-    int2dds_guard_condition_delete(context_data->graph_guard_condition);
-    int2dds_delete_subscriber(context_data->default_subscriber);
-    int2dds_delete_publisher(context_data->default_publisher);
-    int2dds_delete_participant(context_data->participant);
-    int2dds_domain_participant_factory_finalize(context_data->factory);
-    delete context_data;
-    RMW_SET_ERROR_MSG("failed to initialize node-graph discovery");
     return RMW_RET_ERROR;
   }
 
@@ -234,13 +291,12 @@ rmw_init(const rmw_init_options_t * options, rmw_context_t * context)
   // Copy options
   rmw_ret_t rmw_ret = rmw_init_options_copy(options, &context->options);
   if (rmw_ret != RMW_RET_OK) {
-    // Clean up on failure
-    rmw_int2dds_cpp::fini_discovery(context_data);
-    int2dds_guard_condition_delete(context_data->graph_guard_condition);
-    int2dds_delete_subscriber(context_data->default_subscriber);
-    int2dds_delete_publisher(context_data->default_publisher);
-    int2dds_delete_participant(context_data->participant);
-    int2dds_domain_participant_factory_finalize(context_data->factory);
+    // Clean up on failure. Use the shared teardown so the discovery listener
+    // thread is stopped and joined (skipping it would std::terminate when the
+    // Context's joinable thread is destroyed) and the participant's contained
+    // entities are deleted before the participant itself (otherwise it is
+    // orphaned with PRECONDITION_NOT_MET, leaking sockets/eventfds/epoll).
+    rmw_int2dds_cpp::release_context_resources(context_data);
     delete context_data;
     context->impl = nullptr;
     return rmw_ret;
@@ -301,30 +357,15 @@ rmw_context_fini(rmw_context_t * context)
     return RMW_RET_INVALID_ARGUMENT;
   }
 
-  // Tear down node-graph discovery first (joins listener thread, releases the
-  // ros_discovery_info entities) while the participant is still alive.
-  rmw_int2dds_cpp::fini_discovery(context_data);
-
-  // Clean up DDS entities
-  if (context_data->graph_guard_condition != nullptr) {
-    int2dds_guard_condition_delete(context_data->graph_guard_condition);
-  }
-
-  if (context_data->default_subscriber != nullptr) {
-    int2dds_delete_subscriber(context_data->default_subscriber);
-  }
-
-  if (context_data->default_publisher != nullptr) {
-    int2dds_delete_publisher(context_data->default_publisher);
-  }
-
-  if (context_data->participant != nullptr) {
-    int2dds_delete_participant(context_data->participant);
-  }
-
-  if (context_data->factory != nullptr) {
-    int2dds_domain_participant_factory_finalize(context_data->factory);
-  }
+  // Release whatever is still held. rmw_destroy_node may already have done this
+  // when the last node went away, in which case every pointer is null and this
+  // is a no-op. Entities still attached to the participant (a node's built-in
+  // parameter services / rosout publisher) are deleted first: otherwise
+  // int2dds_delete_participant refuses with PRECONDITION_NOT_MET and orphans the
+  // participant, leaking its sockets, eventfds and epoll instances. A context
+  // reclaimed by the client library's garbage collector (rather than an explicit
+  // destroy) can reach here with those entities still attached.
+  rmw_int2dds_cpp::release_context_resources(context_data);
 
   delete context_data;
 
