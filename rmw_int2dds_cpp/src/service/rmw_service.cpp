@@ -385,6 +385,8 @@ rmw_create_service(
     context_data->default_subscriber,
     srv_data->request_topic,
     reader_qos,
+    nullptr,
+    0,
     &srv_data->request_reader);
   int2dds_datareader_qos_destroy(reader_qos);
 
@@ -412,6 +414,8 @@ rmw_create_service(
     context_data->default_publisher,
     srv_data->response_topic,
     writer_qos,
+    nullptr,
+    0,
     &srv_data->response_writer);
   int2dds_datawriter_qos_destroy(writer_qos);
 
@@ -648,13 +652,15 @@ rmw_service_server_is_available(
   int32_t response_current = 0;
 
   if (cli_data->request_writer != nullptr) {
-    int32_t total = 0;
-    int2dds_get_publication_matched_status(cli_data->request_writer, &total, &request_current);
+    Int2DdsPublicationMatchedStatus s = {};
+    int2dds_datawriter_get_publication_matched_status(cli_data->request_writer, &s);
+    request_current = s.current_count;
   }
 
   if (cli_data->response_reader != nullptr) {
-    int32_t total = 0;
-    int2dds_get_subscription_matched_status(cli_data->response_reader, &total, &response_current);
+    Int2DdsSubscriptionMatchedStatus s = {};
+    int2dds_datareader_get_subscription_matched_status(cli_data->response_reader, &s);
+    response_current = s.current_count;
   }
 
   // Service is available only while currently matched on both directions

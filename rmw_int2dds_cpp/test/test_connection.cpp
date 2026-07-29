@@ -38,7 +38,7 @@ int main()
   int32_t domain_id = 0;
 
   const char * participant_name = "test_participant";
-  ret = int2dds_create_participant(factory, participant_name, domain_id, &participant);
+  ret = int2dds_create_participant(factory, domain_id, nullptr, &participant);
   if (ret != INT2DDS_RET_OK) {
     std::cerr << "Failed to create participant: " << ret << std::endl;
     int2dds_domain_participant_factory_finalize(factory);
@@ -50,7 +50,7 @@ int main()
 
     // Create Publisher and Subscriber
   Int2DdsPublisher * publisher = nullptr;
-  ret = int2dds_create_publisher(participant, &publisher);
+  ret = int2dds_create_publisher(participant, nullptr, &publisher);
   if (ret != INT2DDS_RET_OK) {
     std::cerr << "Failed to create publisher: " << ret << std::endl;
   } else {
@@ -58,7 +58,7 @@ int main()
   }
 
   Int2DdsSubscriber * subscriber = nullptr;
-  ret = int2dds_create_subscriber(participant, &subscriber);
+  ret = int2dds_create_subscriber(participant, nullptr, &subscriber);
   if (ret != INT2DDS_RET_OK) {
     std::cerr << "Failed to create subscriber: " << ret << std::endl;
   } else {

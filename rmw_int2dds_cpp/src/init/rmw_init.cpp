@@ -55,7 +55,7 @@ release_context_resources(ContextData * context_data)
     fini_discovery(context_data);
   }
   if (context_data->graph_guard_condition != nullptr) {
-    int2dds_guard_condition_delete(context_data->graph_guard_condition);
+    int2dds_guardcondition_delete(context_data->graph_guard_condition);
     context_data->graph_guard_condition = nullptr;
   }
   if (context_data->default_subscriber != nullptr) {
@@ -159,8 +159,8 @@ acquire_context_resources(ContextData * context_data, const char * enclave)
   if (!context_data->localhost_only && context_data->initial_peers.empty()) {
     ret = int2dds_create_participant(
       context_data->factory,
-      "rmw_int2dds_participant",
       static_cast<int32_t>(context_data->domain_id),
+      nullptr,
       &context_data->participant);
   } else {
     // Discovery was customised, so build the participant from a QoS handle:
@@ -179,9 +179,8 @@ acquire_context_resources(ContextData * context_data, const char * enclave)
           qos, "int2dds.initial_peers", context_data->initial_peers.c_str(), false);
       }
       if (ret == INT2DDS_RET_OK) {
-        ret = int2dds_create_participant_with_qos(
+        ret = int2dds_create_participant(
           context_data->factory,
-          "rmw_int2dds_participant",
           static_cast<int32_t>(context_data->domain_id),
           qos,
           &context_data->participant);
@@ -196,7 +195,7 @@ acquire_context_resources(ContextData * context_data, const char * enclave)
     return RMW_RET_ERROR;
   }
 
-  ret = int2dds_create_publisher(context_data->participant, &context_data->default_publisher);
+  ret = int2dds_create_publisher(context_data->participant, nullptr, &context_data->default_publisher);
   if (ret != INT2DDS_RET_OK) {
     context_data->default_publisher = nullptr;
     release_context_resources(context_data);
@@ -204,7 +203,7 @@ acquire_context_resources(ContextData * context_data, const char * enclave)
     return RMW_RET_ERROR;
   }
 
-  ret = int2dds_create_subscriber(context_data->participant, &context_data->default_subscriber);
+  ret = int2dds_create_subscriber(context_data->participant, nullptr, &context_data->default_subscriber);
   if (ret != INT2DDS_RET_OK) {
     context_data->default_subscriber = nullptr;
     release_context_resources(context_data);
@@ -212,7 +211,7 @@ acquire_context_resources(ContextData * context_data, const char * enclave)
     return RMW_RET_ERROR;
   }
 
-  ret = int2dds_guard_condition_new(&context_data->graph_guard_condition);
+  ret = int2dds_guardcondition_new(&context_data->graph_guard_condition);
   if (ret != INT2DDS_RET_OK) {
     context_data->graph_guard_condition = nullptr;
     release_context_resources(context_data);

@@ -40,7 +40,7 @@ struct SerializedWriteLoanGuard
   ~SerializedWriteLoanGuard()
   {
     if (loan != nullptr) {
-      (void)int2dds_abort_serialized_write(loan);
+      (void)int2dds_datawriter_abort_serialized_write(loan);
     }
   }
 
@@ -185,7 +185,7 @@ rmw_publish(
     size_t loan_capacity = 0;
     SerializedWriteLoanGuard loan_guard;
     const uint64_t prepare_t0 = profile ? now_us() : 0;
-    ret = int2dds_prepare_serialized_write(
+    ret = int2dds_datawriter_prepare_serialized_write(
       pub_data->datawriter,
       capacity_hint,
       &loan_buffer,
@@ -206,7 +206,7 @@ rmw_publish(
 
       if (serialization_success && !serializer.has_error()) {
         const uint64_t commit_t0 = profile ? now_us() : 0;
-        ret = int2dds_commit_serialized_write(
+        ret = int2dds_datawriter_commit_serialized_write(
           pub_data->datawriter,
           loan_guard.release(),
           serialized_size,
@@ -256,7 +256,7 @@ rmw_publish(
 
   // Write to DDS
   const uint64_t write_t0 = profile ? now_us() : 0;
-  ret = int2dds_write_serialized(
+  ret = int2dds_datawriter_write_serialized(
     pub_data->datawriter,
     serializer.get_data(),
     serialized_size,
@@ -307,7 +307,7 @@ rmw_publish_serialized_message(
   }
 
   // Write already serialized message directly
-  Int2DdsRet ret = int2dds_write_serialized(
+  Int2DdsRet ret = int2dds_datawriter_write_serialized(
     pub_data->datawriter,
     serialized_message->buffer,
     serialized_message->buffer_length,

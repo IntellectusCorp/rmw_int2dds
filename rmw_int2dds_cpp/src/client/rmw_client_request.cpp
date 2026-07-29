@@ -188,7 +188,7 @@ rmw_send_request(
   }
 
   // Send request
-  Int2DdsRet ret = int2dds_write_serialized(
+  Int2DdsRet ret = int2dds_datawriter_write_serialized(
     cli_data->request_writer,
     send_buffer.data(),
     send_buffer.size(),
