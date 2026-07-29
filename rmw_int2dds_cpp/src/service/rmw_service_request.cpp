@@ -264,7 +264,7 @@ rmw_send_response(
   }
 
   // Send response
-  Int2DdsRet ret = int2dds_write_serialized(
+  Int2DdsRet ret = int2dds_datawriter_write_serialized(
     srv_data->response_writer,
     send_buffer.data(),
     send_buffer.size(),

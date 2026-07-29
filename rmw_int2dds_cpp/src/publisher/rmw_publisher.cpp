@@ -565,6 +565,8 @@ rmw_create_publisher(
     context_data->default_publisher,
     pub_data->topic,
     writer_qos,
+    nullptr,
+    0,
     &pub_data->datawriter);
   int2dds_datawriter_qos_destroy(writer_qos);
 
@@ -738,10 +740,10 @@ rmw_publisher_count_matched_subscriptions(
     return RMW_RET_ERROR;
   }
 
-  int32_t total_count = 0;
-  int32_t current_count = 0;
-  Int2DdsRet ret = int2dds_get_publication_matched_status(
-    pub_data->datawriter, &total_count, &current_count);
+  Int2DdsPublicationMatchedStatus matched_status = {};
+  Int2DdsRet ret = int2dds_datawriter_get_publication_matched_status(
+    pub_data->datawriter, &matched_status);
+  const int32_t current_count = matched_status.current_count;
   if (ret != INT2DDS_RET_OK) {
     RMW_SET_ERROR_MSG("failed to get publication matched status");
     return RMW_RET_ERROR;

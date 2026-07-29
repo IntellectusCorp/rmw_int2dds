@@ -382,6 +382,8 @@ rmw_create_client(
     context_data->default_publisher,
     cli_data->request_topic,
     writer_qos,
+    nullptr,
+    0,
     &cli_data->request_writer);
   int2dds_datawriter_qos_destroy(writer_qos);
 
@@ -407,6 +409,8 @@ rmw_create_client(
     context_data->default_subscriber,
     cli_data->response_topic,
     reader_qos,
+    nullptr,
+    0,
     &cli_data->response_reader);
   int2dds_datareader_qos_destroy(reader_qos);
 
