@@ -168,21 +168,21 @@ Int2DdsTypeInfo * rebuild_type_info(const std::string & name, const std::vector<
           INT2DDS_RET_OK;
         break;
       case MEMBER_NESTED: {
-        Int2DdsTypeInfo * sub = rebuild_type_info(m.name, m.sub);
-        ok = sub &&
-          int2dds_type_info_add_nested_field(ti, m.name.c_str(), sub, 0) == INT2DDS_RET_OK;
-        if (sub) {int2dds_type_info_destroy(sub);}
-        break;
-      }
+          Int2DdsTypeInfo * sub = rebuild_type_info(m.name, m.sub);
+          ok = sub &&
+            int2dds_type_info_add_nested_field(ti, m.name.c_str(), sub, 0) == INT2DDS_RET_OK;
+          if (sub) {int2dds_type_info_destroy(sub);}
+          break;
+        }
       case MEMBER_STRUCT_COLLECTION: {
-        Int2DdsTypeInfo * sub = rebuild_type_info(m.name, m.sub);
-        ok = sub && ((m.is_array ?
-          int2dds_type_info_add_array_of_nested_field(ti, m.name.c_str(), sub, m.extent, 0) :
-          int2dds_type_info_add_sequence_of_nested_field(ti, m.name.c_str(), sub, m.extent, 0)) ==
-          INT2DDS_RET_OK);
-        if (sub) {int2dds_type_info_destroy(sub);}
-        break;
-      }
+          Int2DdsTypeInfo * sub = rebuild_type_info(m.name, m.sub);
+          ok = sub && ((m.is_array ?
+            int2dds_type_info_add_array_of_nested_field(ti, m.name.c_str(), sub, m.extent, 0) :
+            int2dds_type_info_add_sequence_of_nested_field(ti, m.name.c_str(), sub, m.extent, 0)) ==
+            INT2DDS_RET_OK);
+          if (sub) {int2dds_type_info_destroy(sub);}
+          break;
+        }
     }
     if (!ok) {
       int2dds_type_info_destroy(ti);
