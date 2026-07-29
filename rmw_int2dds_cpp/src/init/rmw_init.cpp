@@ -107,7 +107,9 @@ acquire_context_resources(ContextData * context_data, const char * enclave)
     return RMW_RET_ERROR;
   }
 
-  ret = int2dds_create_publisher(context_data->participant, nullptr, &context_data->default_publisher);
+  ret = int2dds_create_publisher(
+    context_data->participant, nullptr,
+    &context_data->default_publisher);
   if (ret != INT2DDS_RET_OK) {
     context_data->default_publisher = nullptr;
     release_context_resources(context_data);
@@ -115,7 +117,9 @@ acquire_context_resources(ContextData * context_data, const char * enclave)
     return RMW_RET_ERROR;
   }
 
-  ret = int2dds_create_subscriber(context_data->participant, nullptr, &context_data->default_subscriber);
+  ret = int2dds_create_subscriber(
+    context_data->participant, nullptr,
+    &context_data->default_subscriber);
   if (ret != INT2DDS_RET_OK) {
     context_data->default_subscriber = nullptr;
     release_context_resources(context_data);
