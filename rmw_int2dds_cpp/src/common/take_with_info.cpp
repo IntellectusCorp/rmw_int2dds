@@ -37,7 +37,7 @@ take_one_serialized_with_info(
   *valid_data = false;
 
   Int2DdsSampleSeq * seq = nullptr;
-  Int2DdsRet ret = int2dds_take_serialized_batch(reader, 1, &seq);
+  Int2DdsRet ret = int2dds_datareader_take_serialized_batch(reader, 1, &seq);
   if (ret != INT2DDS_RET_OK) {
     return ret;
   }

@@ -27,7 +27,7 @@ inline void trigger_graph_guard_condition(ContextData * context_data)
     return;
   }
 
-  (void)int2dds_guard_condition_set_trigger_value(
+  (void)int2dds_guardcondition_set_trigger_value(
     context_data->graph_guard_condition,
     true);
 }

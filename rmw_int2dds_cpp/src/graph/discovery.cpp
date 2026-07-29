@@ -84,7 +84,7 @@ rmw_ret_t publish_entities_info(
 
   ret = rmw_serialize(msg, type_support, &serialized);
   if (ret == RMW_RET_OK) {
-    const Int2DdsRet wret = int2dds_write_serialized(
+    const Int2DdsRet wret = int2dds_datawriter_write_serialized(
       writer, serialized.buffer, serialized.buffer_length, nullptr, 0);
     if (wret != INT2DDS_RET_OK) {
       ret = RMW_RET_ERROR;
@@ -119,7 +119,7 @@ void listener_loop(
   while (context_data->common->thread_is_running.load()) {
     uintptr_t actual_size = 0;
     bool valid = false;
-    const Int2DdsRet take = int2dds_take_serialized(
+    const Int2DdsRet take = int2dds_datareader_take_serialized(
       context_data->discovery_reader, buffer.data(), buffer.size(), &actual_size, &valid);
     if (take != INT2DDS_RET_OK || !valid || actual_size == 0) {
       std::this_thread::sleep_for(std::chrono::milliseconds(20));
@@ -188,6 +188,7 @@ rmw_ret_t init_discovery(ContextData * context_data, const char * enclave)
   int2dds_datawriter_qos_set_history(writer_qos, INT2DDS_QOS_HISTORY_KEEP_LAST, 1);
   ret = int2dds_create_datawriter(
     context_data->default_publisher, context_data->discovery_topic, writer_qos,
+    nullptr, 0,
     &context_data->discovery_writer);
   int2dds_datawriter_qos_destroy(writer_qos);
   if (ret != INT2DDS_RET_OK) {
@@ -206,6 +207,7 @@ rmw_ret_t init_discovery(ContextData * context_data, const char * enclave)
   int2dds_datareader_qos_set_history(reader_qos, INT2DDS_QOS_HISTORY_KEEP_ALL, 0);
   ret = int2dds_create_datareader(
     context_data->default_subscriber, context_data->discovery_topic, reader_qos,
+    nullptr, 0,
     &context_data->discovery_reader);
   int2dds_datareader_qos_destroy(reader_qos);
   if (ret != INT2DDS_RET_OK) {

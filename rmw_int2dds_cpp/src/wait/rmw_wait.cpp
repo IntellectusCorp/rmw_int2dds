@@ -187,14 +187,14 @@ guard_condition_is_triggered(const rmw_int2dds_cpp::GuardConditionData * gc_data
   }
 
   bool triggered = false;
-  Int2DdsRet ret = int2dds_guard_condition_get_trigger_value(gc_data->guard_condition, &triggered);
+  Int2DdsRet ret = int2dds_guardcondition_get_trigger_value(gc_data->guard_condition, &triggered);
   if (ret != INT2DDS_RET_OK) {
     return false;
   }
 
   // Reset trigger value after checking (like taking the trigger)
   if (triggered) {
-    int2dds_guard_condition_set_trigger_value(gc_data->guard_condition, false);
+    int2dds_guardcondition_set_trigger_value(gc_data->guard_condition, false);
   }
 
   return triggered;
@@ -420,7 +420,7 @@ rmw_wait(
           bool ready = ensure_status_condition_mask(
             sub_data->datareader, &sub_data->status_condition, INT2DDS_STATUS_DATA_AVAILABLE);
           Int2DdsRet ret = ready && sub_data->status_condition != nullptr ?
-            int2dds_waitset_attach_condition(ws_data->waitset, sub_data->status_condition) :
+            int2dds_waitset_attach_statuscondition(ws_data->waitset, sub_data->status_condition) :
             INT2DDS_RET_ERROR;
           if (ret == INT2DDS_RET_OK) {
             attached_reader_conditions.push_back(sub_data->status_condition);
@@ -437,7 +437,7 @@ rmw_wait(
         auto * gc_data =
           static_cast<rmw_int2dds_cpp::GuardConditionData *>(guard_conditions->guard_conditions[i]);
         if (gc_data != nullptr && gc_data->guard_condition != nullptr) {
-          Int2DdsRet ret = int2dds_waitset_attach_guard_condition(
+          Int2DdsRet ret = int2dds_waitset_attach_guardcondition(
             ws_data->waitset, gc_data->guard_condition);
           if (ret == INT2DDS_RET_OK) {
             attached_guards.push_back(gc_data->guard_condition);
@@ -458,7 +458,7 @@ rmw_wait(
             &srv_data->request_status_condition,
             INT2DDS_STATUS_DATA_AVAILABLE);
           Int2DdsRet ret = ready && srv_data->request_status_condition != nullptr ?
-            int2dds_waitset_attach_condition(
+            int2dds_waitset_attach_statuscondition(
             ws_data->waitset, srv_data->request_status_condition) :
             INT2DDS_RET_ERROR;
           if (ret == INT2DDS_RET_OK) {
@@ -480,7 +480,7 @@ rmw_wait(
             &cli_data->response_status_condition,
             INT2DDS_STATUS_DATA_AVAILABLE);
           Int2DdsRet ret = ready && cli_data->response_status_condition != nullptr ?
-            int2dds_waitset_attach_condition(
+            int2dds_waitset_attach_statuscondition(
             ws_data->waitset, cli_data->response_status_condition) :
             INT2DDS_RET_ERROR;
           if (ret == INT2DDS_RET_OK) {
@@ -502,7 +502,7 @@ rmw_wait(
         auto * event_data = static_cast<rmw_int2dds_cpp::EventData *>(event->data);
         Int2DdsStatusCondition * status_condition = refresh_event_status_condition(event_data);
         if (status_condition != nullptr) {
-          Int2DdsRet ret = int2dds_waitset_attach_condition(
+          Int2DdsRet ret = int2dds_waitset_attach_statuscondition(
             ws_data->waitset, status_condition);
           if (ret == INT2DDS_RET_OK) {
             attached_event_conditions.push_back(status_condition);
@@ -567,9 +567,16 @@ rmw_wait(
     }
   }
 
-  Int2DdsRet wait_ret = data_already_ready ?
-    INT2DDS_RET_OK :
-    int2dds_waitset_wait_ns(ws_data->waitset, timeout_ns);
+  // waitset_wait_ex_ns was consolidated into wait_ex_ns, which returns the triggered
+  // conditions; the wait loop below re-checks conditions itself, so free the sequence.
+  Int2DdsRet wait_ret = INT2DDS_RET_OK;
+  if (!data_already_ready) {
+    Int2DdsConditionSeq * triggered = nullptr;
+    wait_ret = int2dds_waitset_wait_ex_ns(ws_data->waitset, timeout_ns, &triggered);
+    if (triggered) {
+      int2dds_condition_seq_delete(triggered);
+    }
+  }
   if (profile) {
     wait_elapsed_us = elapsed_us(wait_t0, std::chrono::steady_clock::now());
   }
@@ -577,13 +584,13 @@ rmw_wait(
   // Detach all entities (cleanup)
   const auto detach_t0 = std::chrono::steady_clock::now();
   for (auto * condition : attached_reader_conditions) {
-    int2dds_waitset_detach_condition(ws_data->waitset, condition);
+    int2dds_waitset_detach_statuscondition(ws_data->waitset, condition);
   }
   for (auto * guard : attached_guards) {
-    int2dds_waitset_detach_guard_condition(ws_data->waitset, guard);
+    int2dds_waitset_detach_guardcondition(ws_data->waitset, guard);
   }
   for (auto * condition : attached_event_conditions) {
-    int2dds_waitset_detach_condition(ws_data->waitset, condition);
+    int2dds_waitset_detach_statuscondition(ws_data->waitset, condition);
   }
   if (profile) {
     detach_elapsed_us = elapsed_us(detach_t0, std::chrono::steady_clock::now());

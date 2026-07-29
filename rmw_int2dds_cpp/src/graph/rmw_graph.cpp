@@ -181,28 +181,29 @@ static void for_each_publication_snapshot(
   int timeout_ms,
   const std::function<void(Int2DdsPublicationBuiltinTopicData *)> & callback)
 {
-  (void)timeout_ms;
-  uintptr_t count = 0;
+  // The count/by-index accessors were consolidated into a single snapshot sequence.
+  Int2DdsPublicationBuiltinTopicDataSeq * seq = nullptr;
   if (
-    int2dds_participant_get_discovered_publication_count(
-      context_data->participant, &count) != INT2DDS_RET_OK)
+    int2dds_participant_take_discovered_publications_snapshot(
+      context_data->participant, timeout_ms, &seq) != INT2DDS_RET_OK ||
+    seq == nullptr)
   {
     return;
   }
 
-  for (uintptr_t i = 0; i < count; ++i) {
-    Int2DdsPublicationBuiltinTopicData * publication = nullptr;
-    if (
-      int2dds_participant_get_discovered_publication_data_by_index(
-        context_data->participant, i, &publication) != INT2DDS_RET_OK ||
-      publication == nullptr)
-    {
-      continue;
+  uintptr_t count = 0;
+  if (int2dds_publication_builtin_topic_data_seq_length(seq, &count) == INT2DDS_RET_OK) {
+    for (uintptr_t i = 0; i < count; ++i) {
+      Int2DdsPublicationBuiltinTopicData * publication = nullptr;
+      if (
+        int2dds_publication_builtin_topic_data_seq_get(seq, i, &publication) == INT2DDS_RET_OK &&
+        publication != nullptr)
+      {
+        callback(publication);
+      }
     }
-
-    callback(publication);
-    int2dds_publication_builtin_topic_data_destroy(publication);
   }
+  int2dds_publication_builtin_topic_data_seq_delete(seq);
 }
 
 static void for_each_subscription_snapshot(
@@ -210,28 +211,28 @@ static void for_each_subscription_snapshot(
   int timeout_ms,
   const std::function<void(Int2DdsSubscriptionBuiltinTopicData *)> & callback)
 {
-  (void)timeout_ms;
-  uintptr_t count = 0;
+  Int2DdsSubscriptionBuiltinTopicDataSeq * seq = nullptr;
   if (
-    int2dds_participant_get_discovered_subscription_count(
-      context_data->participant, &count) != INT2DDS_RET_OK)
+    int2dds_participant_take_discovered_subscriptions_snapshot(
+      context_data->participant, timeout_ms, &seq) != INT2DDS_RET_OK ||
+    seq == nullptr)
   {
     return;
   }
 
-  for (uintptr_t i = 0; i < count; ++i) {
-    Int2DdsSubscriptionBuiltinTopicData * subscription = nullptr;
-    if (
-      int2dds_participant_get_discovered_subscription_data_by_index(
-        context_data->participant, i, &subscription) != INT2DDS_RET_OK ||
-      subscription == nullptr)
-    {
-      continue;
+  uintptr_t count = 0;
+  if (int2dds_subscription_builtin_topic_data_seq_length(seq, &count) == INT2DDS_RET_OK) {
+    for (uintptr_t i = 0; i < count; ++i) {
+      Int2DdsSubscriptionBuiltinTopicData * subscription = nullptr;
+      if (
+        int2dds_subscription_builtin_topic_data_seq_get(seq, i, &subscription) == INT2DDS_RET_OK &&
+        subscription != nullptr)
+      {
+        callback(subscription);
+      }
     }
-
-    callback(subscription);
-    int2dds_subscription_builtin_topic_data_destroy(subscription);
   }
+  int2dds_subscription_builtin_topic_data_seq_delete(seq);
 }
 
 static std::set<std::array<uint8_t, 12>> get_remote_participant_keys(
