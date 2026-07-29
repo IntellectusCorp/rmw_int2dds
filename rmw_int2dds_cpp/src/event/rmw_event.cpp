@@ -713,8 +713,7 @@ rmw_event_set_callback(
         const int32_t total_count =
           (INT2DDS_RET_OK == int2dds_datawriter_get_publication_matched_status(
             pub_data->datawriter, &matched_status)) ? matched_status.total_count : 0;
-        if (static_cast<size_t>(total_count) > pub_data->matched_total_seen)
-        {
+        if (static_cast<size_t>(total_count) > pub_data->matched_total_seen) {
           pub_data->matched_unread +=
             static_cast<size_t>(total_count) - pub_data->matched_total_seen;
           pub_data->matched_total_seen = static_cast<size_t>(total_count);
@@ -741,8 +740,7 @@ rmw_event_set_callback(
         const int32_t total_count =
           (INT2DDS_RET_OK == int2dds_datareader_get_subscription_matched_status(
             sub_data->datareader, &matched_status)) ? matched_status.total_count : 0;
-        if (static_cast<size_t>(total_count) > sub_data->matched_total_seen)
-        {
+        if (static_cast<size_t>(total_count) > sub_data->matched_total_seen) {
           sub_data->matched_unread +=
             static_cast<size_t>(total_count) - sub_data->matched_total_seen;
           sub_data->matched_total_seen = static_cast<size_t>(total_count);
