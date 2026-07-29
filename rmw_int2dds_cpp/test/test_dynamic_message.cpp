@@ -548,11 +548,12 @@ void run_nested_vtable_phase(bool * p12)
 // read via the flat path: add_sequence_of_named_field references the element by hash, and
 // the participant-free decoder resolves it to an opaque ExternalType, so element reads fail
 // (rather than returning wrong data). PASS = the read fails, i.e. the limitation is honest.
-void run_edge_phase(bool * p13);
+void run_edge_phase(bool * p13, bool * p14);
 
-void run_edge_phase(bool * p13)
+void run_edge_phase(bool * p13, bool * p14)
 {
   bool phase13_ok = true;
+  bool phase14_ok = true;
 #ifdef HAVE_POLYGON
   phase13_ok = false;
   {
@@ -576,30 +577,138 @@ void run_edge_phase(bool * p13)
     unsigned h2 = gcdr.buffer_length > 2 ? gcdr.buffer[2] : 0;
     unsigned h3 = gcdr.buffer_length > 3 ? gcdr.buffer[3] : 0;
 
+    // Sequence-of-nested via the type_info builder: supply the element's own type_info so the
+    // core captures its TypeObject in the dependency closure and decode_flat resolves it.
+    Int2DdsTypeInfo * pt_ti = nullptr;
     Int2DdsTypeInfo * ti = nullptr;
     Int2DdsTypeObject * obj = nullptr;
     const bool built =
+      int2dds_type_info_create("geometry_msgs::msg::Point32", 0, &pt_ti) == INT2DDS_RET_OK &&
+      int2dds_type_info_add_field(pt_ti, "x", INT2DDS_FIELD_FLOAT32, 0) == INT2DDS_RET_OK &&
+      int2dds_type_info_add_field(pt_ti, "y", INT2DDS_FIELD_FLOAT32, 0) == INT2DDS_RET_OK &&
+      int2dds_type_info_add_field(pt_ti, "z", INT2DDS_FIELD_FLOAT32, 0) == INT2DDS_RET_OK &&
       int2dds_type_info_create("geometry_msgs::msg::Polygon", 0, &ti) == INT2DDS_RET_OK &&
-      int2dds_type_info_add_sequence_of_named_field(
-        ti, "points", "geometry_msgs::msg::Point32", 0, 0) == INT2DDS_RET_OK &&
+      int2dds_type_info_add_sequence_of_nested_field(ti, "points", pt_ti, 0, 0) ==
+      INT2DDS_RET_OK &&
       int2dds_type_info_to_type_object(ti, &obj) == INT2DDS_RET_OK;
     Int2DdsRet r = INT2DDS_RET_ERROR;
+    Int2DdsRet r2 = INT2DDS_RET_ERROR;
     float x = -1.0f;
+    float y1 = -1.0f;
     if (built) {
       r = int2dds_dynamic_sample_get_f32(gcdr.buffer, gcdr.buffer_length, obj, "points[0].x", &x);
+      r2 = int2dds_dynamic_sample_get_f32(gcdr.buffer, gcdr.buffer_length, obj, "points[1].y", &y1);
     }
     std::printf(
       "[phase13 edge]   encap=[%02x %02x %02x %02x] arr-of-nested points[0].x ret=%d x=%g "
-      "(expect read failure: element struct is opaque without a type registry)\n",
-      h0, h1, h2, h3, static_cast<int>(r), static_cast<double>(x));
-    // Honest-limitation guard: the read must fail rather than yield a bogus value.
-    phase13_ok = (r != INT2DDS_RET_OK);
+      "points[1].y ret=%d y=%g (expect MATCH 1.0 / 5.0)\n",
+      h0, h1, h2, h3, static_cast<int>(r), static_cast<double>(x),
+      static_cast<int>(r2), static_cast<double>(y1));
+    phase13_ok = (r == INT2DDS_RET_OK && x == 1.0f && r2 == INT2DDS_RET_OK && y1 == 5.0f);
     if (obj) {int2dds_type_object_destroy(obj);}
     if (ti) {int2dds_type_info_destroy(ti);}
+    if (pt_ti) {int2dds_type_info_destroy(pt_ti);}
   }
 #else
   std::printf("[phase13 edge]   SKIP: geometry_msgs/Polygon unavailable\n");
 #endif
+  // Phase 14: array/sequence of nested struct through the rmw VTABLE + the rosidl loan path.
+  // Builds Polygon{Point32[] points} via the builder (add_complex_unbounded_sequence_member),
+  // then loans the sequence, loans each element, and reads element fields. Exercises this rmw's
+  // add_struct_collection + loan_value(2-stage) + get_item_count + resolve_path (path_prefix).
+#ifdef HAVE_POLYGON
+  phase14_ok = false;
+  {
+    geometry_msgs::msg::Polygon poly;
+    geometry_msgs::msg::Point32 pt;
+    pt.x = 1.0f;
+    pt.y = 2.0f;
+    pt.z = 3.0f;
+    poly.points.push_back(pt);
+    pt.x = 4.0f;
+    pt.y = 5.0f;
+    pt.z = 6.0f;
+    poly.points.push_back(pt);
+    rclcpp::Serialization<geometry_msgs::msg::Polygon> gser;
+    rclcpp::SerializedMessage gserialized;
+    gser.serialize_message(&poly, &gserialized);
+    const rcl_serialized_message_t & gcdr = gserialized.get_rcl_serialized_message();
+
+    rcutils_allocator_t alloc = rcutils_get_default_allocator();
+    rosidl_dynamic_typesupport_serialization_support_t ss =
+      rosidl_dynamic_typesupport_get_zero_initialized_serialization_support();
+    if (rmw_serialization_support_init("", &alloc, &ss) == RMW_RET_OK) {
+      rosidl_dynamic_typesupport_dynamic_type_builder_t ptbld =
+        rosidl_dynamic_typesupport_get_zero_initialized_dynamic_type_builder();
+      rosidl_dynamic_typesupport_dynamic_type_t pttype =
+        rosidl_dynamic_typesupport_get_zero_initialized_dynamic_type();
+      rosidl_dynamic_typesupport_dynamic_type_builder_t polybld =
+        rosidl_dynamic_typesupport_get_zero_initialized_dynamic_type_builder();
+      rosidl_dynamic_typesupport_dynamic_type_t polytype =
+        rosidl_dynamic_typesupport_get_zero_initialized_dynamic_type();
+      rosidl_dynamic_typesupport_dynamic_data_t data =
+        rosidl_dynamic_typesupport_get_zero_initialized_dynamic_data();
+      rcutils_ret_t rc = RCUTILS_RET_OK;
+#define P14STEP(call) do {if (rc == RCUTILS_RET_OK) {rc = (call);}} while (0)
+      P14STEP(rosidl_dynamic_typesupport_dynamic_type_builder_init(
+          &ss, "geometry_msgs::msg::Point32", 27, &alloc, &ptbld));
+      P14STEP(rosidl_dynamic_typesupport_dynamic_type_builder_add_float32_member(
+          &ptbld, 0, "x", 1, "", 0));
+      P14STEP(rosidl_dynamic_typesupport_dynamic_type_builder_add_float32_member(
+          &ptbld, 1, "y", 1, "", 0));
+      P14STEP(rosidl_dynamic_typesupport_dynamic_type_builder_add_float32_member(
+          &ptbld, 2, "z", 1, "", 0));
+      P14STEP(rosidl_dynamic_typesupport_dynamic_type_init_from_dynamic_type_builder(
+          &ptbld, &alloc, &pttype));
+      P14STEP(rosidl_dynamic_typesupport_dynamic_type_builder_init(
+          &ss, "geometry_msgs::msg::Polygon", 27, &alloc, &polybld));
+      P14STEP(rosidl_dynamic_typesupport_dynamic_type_builder_add_complex_unbounded_sequence_member(
+          &polybld, 0, "points", 6, "", 0, &pttype));
+      P14STEP(rosidl_dynamic_typesupport_dynamic_type_init_from_dynamic_type_builder(
+          &polybld, &alloc, &polytype));
+      P14STEP(rosidl_dynamic_typesupport_dynamic_data_init_from_dynamic_type(
+          &polytype, &alloc, &data));
+      {
+        rcutils_uint8_array_t buf = gcdr;
+        P14STEP(rosidl_dynamic_typesupport_dynamic_data_deserialize(&data, &buf));
+      }
+      size_t count = 0;
+      float x0 = -1.0f;
+      float y1 = -1.0f;
+      rosidl_dynamic_typesupport_dynamic_data_t lcoll =
+        rosidl_dynamic_typesupport_get_zero_initialized_dynamic_data();
+      P14STEP(rosidl_dynamic_typesupport_dynamic_data_loan_value(&data, 0, &alloc, &lcoll));
+      P14STEP(rosidl_dynamic_typesupport_dynamic_data_get_item_count(&lcoll, &count));
+      {
+        rosidl_dynamic_typesupport_dynamic_data_t le0 =
+          rosidl_dynamic_typesupport_get_zero_initialized_dynamic_data();
+        P14STEP(rosidl_dynamic_typesupport_dynamic_data_loan_value(&lcoll, 0, &alloc, &le0));
+        P14STEP(rosidl_dynamic_typesupport_dynamic_data_get_float32_value(&le0, 0, &x0));
+        P14STEP(rosidl_dynamic_typesupport_dynamic_data_return_loaned_value(&lcoll, &le0));
+      }
+      {
+        rosidl_dynamic_typesupport_dynamic_data_t le1 =
+          rosidl_dynamic_typesupport_get_zero_initialized_dynamic_data();
+        P14STEP(rosidl_dynamic_typesupport_dynamic_data_loan_value(&lcoll, 1, &alloc, &le1));
+        P14STEP(rosidl_dynamic_typesupport_dynamic_data_get_float32_value(&le1, 1, &y1));
+        P14STEP(rosidl_dynamic_typesupport_dynamic_data_return_loaned_value(&lcoll, &le1));
+      }
+      P14STEP(rosidl_dynamic_typesupport_dynamic_data_return_loaned_value(&data, &lcoll));
+#undef P14STEP
+      std::printf(
+        "[phase14 sq-nst-vt] rc=%d count=%zu points[0].x=%g points[1].y=%g "
+        "(expect 2 / 1.0 / 5.0)\n",
+        static_cast<int>(rc), count, static_cast<double>(x0), static_cast<double>(y1));
+      phase14_ok = (rc == RCUTILS_RET_OK && count == 2 && x0 == 1.0f && y1 == 5.0f);
+    } else {
+      std::printf("[phase14 sq-nst-vt] FAIL: rmw_serialization_support_init\n");
+    }
+  }
+#else
+  std::printf("[phase14 sq-nst-vt] SKIP: geometry_msgs/Polygon unavailable\n");
+#endif
+
+  *p14 = phase14_ok;
   *p13 = phase13_ok;
 }
 
@@ -1048,17 +1157,18 @@ int main()
   run_nested_vtable_phase(&phase12_ok);
 
   bool phase13_ok = true;
-  run_edge_phase(&phase13_ok);
+  bool phase14_ok = true;
+  run_edge_phase(&phase13_ok, &phase14_ok);
 
   const bool ok =
     phase1_ok && phase2_ok && phase3_ok && phase4_ok && phase5_ok && phase6_ok &&
     phase7_ok && phase8_ok && phase9_ok && phase10_ok && phase11_ok && phase12_ok &&
-    phase13_ok;
+    phase13_ok && phase14_ok;
   std::printf(
     "RESULT: phase1(FFI)=%s  phase2(int32)=%s  phase3(vec3)=%s  phase4(all-prims)=%s  "
     "phase5(string)=%s  phase6(wstring)=%s  phase7(array)=%s  phase8(seq)=%s  "
     "phase9(arr-vt)=%s  phase10(seq-vt)=%s  phase11(nested)=%s  phase12(nst-vt)=%s  "
-    "phase13(edge)=%s  => %s\n",
+    "phase13(edge)=%s  phase14(sq-nst-vt)=%s  => %s\n",
     phase1_ok ? "PASS" : "FAIL",
     phase2_ok ? "PASS" : "FAIL",
     phase3_ok ? "PASS" : "FAIL",
@@ -1072,6 +1182,7 @@ int main()
     phase11_ok ? "PASS" : "FAIL",
     phase12_ok ? "PASS" : "FAIL",
     phase13_ok ? "PASS" : "FAIL",
+    phase14_ok ? "PASS" : "FAIL",
     ok ? "PASS" : "FAIL");
   return ok ? 0 : 1;
 }
