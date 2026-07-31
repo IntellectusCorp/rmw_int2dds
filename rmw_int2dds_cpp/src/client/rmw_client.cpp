@@ -55,6 +55,130 @@ has_unknown_qos_policy(const rmw_qos_profile_t & qos)
          qos.liveliness == RMW_QOS_POLICY_LIVELINESS_UNKNOWN;
 }
 
+// Duration/liveliness helpers mirrored from rmw_create_publisher/subscription so
+// services/clients apply deadline, lifespan and liveliness to the DDS entities
+// instead of dropping them (they used to set only reliability/durability/history).
+bool
+is_unspecified_duration(const rmw_time_t & duration)
+{
+  const rmw_time_t unspecified = RMW_DURATION_UNSPECIFIED;
+  return duration.sec == unspecified.sec && duration.nsec == unspecified.nsec;
+}
+
+bool
+is_best_available_deadline(const rmw_time_t & duration)
+{
+#ifdef RMW_QOS_DEADLINE_BEST_AVAILABLE
+  const rmw_time_t best_available = RMW_QOS_DEADLINE_BEST_AVAILABLE;
+  return duration.sec == best_available.sec && duration.nsec == best_available.nsec;
+#else
+  (void)duration;
+  return false;
+#endif
+}
+
+bool
+is_explicit_liveliness_policy(rmw_qos_liveliness_policy_t liveliness)
+{
+  if (liveliness == RMW_QOS_POLICY_LIVELINESS_SYSTEM_DEFAULT ||
+    liveliness == RMW_QOS_POLICY_LIVELINESS_UNKNOWN)
+  {
+    return false;
+  }
+#ifdef RMW_QOS_DEADLINE_BEST_AVAILABLE
+  if (liveliness == RMW_QOS_POLICY_LIVELINESS_BEST_AVAILABLE) {
+    return false;
+  }
+#endif
+  return true;
+}
+
+int32_t
+liveliness_to_int2dds(rmw_qos_liveliness_policy_t liveliness)
+{
+  switch (liveliness) {
+// ROS 2 Lyrical removed the deprecated MANUAL_BY_NODE policy; detect via a header
+// introduced in the same release (enum values are invisible to __has_include).
+#if !__has_include("rmw/get_service_endpoint_info.h")
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+    case RMW_QOS_POLICY_LIVELINESS_MANUAL_BY_NODE:
+#pragma GCC diagnostic pop
+      return INT2DDS_QOS_LIVELINESS_MANUAL_BY_PARTICIPANT;
+#endif
+    case RMW_QOS_POLICY_LIVELINESS_MANUAL_BY_TOPIC:
+      return INT2DDS_QOS_LIVELINESS_MANUAL_BY_TOPIC;
+    case RMW_QOS_POLICY_LIVELINESS_AUTOMATIC:
+    default:
+      return INT2DDS_QOS_LIVELINESS_AUTOMATIC;
+  }
+}
+
+int64_t
+duration_to_ns(const rmw_time_t & duration)
+{
+  return static_cast<int64_t>(duration.sec) * 1000000000LL + static_cast<int64_t>(duration.nsec);
+}
+
+void
+set_writer_deadline_lifespan_liveliness(
+  Int2DdsDataWriterQos * writer_qos, const rmw_qos_profile_t & qos)
+{
+  if (!is_unspecified_duration(qos.deadline) && !is_best_available_deadline(qos.deadline)) {
+    int2dds_datawriter_qos_set_deadline(writer_qos, duration_to_ns(qos.deadline));
+  }
+  if (!is_unspecified_duration(qos.lifespan)) {
+    int2dds_datawriter_qos_set_lifespan(writer_qos, duration_to_ns(qos.lifespan));
+  }
+  if (is_explicit_liveliness_policy(qos.liveliness) ||
+    !is_unspecified_duration(qos.liveliness_lease_duration))
+  {
+    int32_t liveliness_kind = INT2DDS_QOS_LIVELINESS_AUTOMATIC;
+    int64_t lease_duration_ns = 0;
+    if (int2dds_datawriter_qos_get_liveliness(
+        writer_qos, &liveliness_kind, &lease_duration_ns) != INT2DDS_RET_OK)
+    {
+      liveliness_kind = INT2DDS_QOS_LIVELINESS_AUTOMATIC;
+      lease_duration_ns = 0;
+    }
+    if (is_explicit_liveliness_policy(qos.liveliness)) {
+      liveliness_kind = liveliness_to_int2dds(qos.liveliness);
+    }
+    if (!is_unspecified_duration(qos.liveliness_lease_duration)) {
+      lease_duration_ns = duration_to_ns(qos.liveliness_lease_duration);
+    }
+    int2dds_datawriter_qos_set_liveliness(writer_qos, liveliness_kind, lease_duration_ns);
+  }
+}
+
+void
+set_reader_deadline_liveliness(
+  Int2DdsDataReaderQos * reader_qos, const rmw_qos_profile_t & qos)
+{
+  if (!is_unspecified_duration(qos.deadline) && !is_best_available_deadline(qos.deadline)) {
+    int2dds_datareader_qos_set_deadline(reader_qos, duration_to_ns(qos.deadline));
+  }
+  if (is_explicit_liveliness_policy(qos.liveliness) ||
+    !is_unspecified_duration(qos.liveliness_lease_duration))
+  {
+    int32_t liveliness_kind = INT2DDS_QOS_LIVELINESS_AUTOMATIC;
+    int64_t lease_duration_ns = 0;
+    if (int2dds_datareader_qos_get_liveliness(
+        reader_qos, &liveliness_kind, &lease_duration_ns) != INT2DDS_RET_OK)
+    {
+      liveliness_kind = INT2DDS_QOS_LIVELINESS_AUTOMATIC;
+      lease_duration_ns = 0;
+    }
+    if (is_explicit_liveliness_policy(qos.liveliness)) {
+      liveliness_kind = liveliness_to_int2dds(qos.liveliness);
+    }
+    if (!is_unspecified_duration(qos.liveliness_lease_duration)) {
+      lease_duration_ns = duration_to_ns(qos.liveliness_lease_duration);
+    }
+    int2dds_datareader_qos_set_liveliness(reader_qos, liveliness_kind, lease_duration_ns);
+  }
+}
+
 void
 set_writer_history(Int2DdsDataWriterQos * writer_qos, const rmw_qos_profile_t & qos)
 {
@@ -80,6 +204,49 @@ set_reader_history(Int2DdsDataReaderQos * reader_qos, const rmw_qos_profile_t & 
       depth = 1;
     }
     int2dds_datareader_qos_set_history(reader_qos, INT2DDS_QOS_HISTORY_KEEP_LAST, depth);
+  }
+}
+
+// Reliability and durability used to be pinned to RELIABLE/VOLATILE here, which
+// dropped whatever the caller asked for. Two endpoints therefore always matched,
+// even when their profiles were incompatible under the DDS request/offer rules --
+// rmw_fastrtps_cpp and rmw_cyclonedds_cpp both refuse the match in that case, so a
+// client that only worked on this RMW would break on any other one. Map the
+// requested policies the same way rmw_create_publisher and rmw_create_subscription
+// already do; system-default values are resolved beforehand by resolve_actual_qos.
+void
+set_writer_reliability_durability(
+  Int2DdsDataWriterQos * writer_qos, const rmw_qos_profile_t & qos)
+{
+  if (qos.reliability == RMW_QOS_POLICY_RELIABILITY_BEST_EFFORT) {
+    int2dds_datawriter_qos_set_reliability(writer_qos, INT2DDS_QOS_RELIABILITY_BEST_EFFORT, 0);
+  } else {
+    int2dds_datawriter_qos_set_reliability(
+      writer_qos, INT2DDS_QOS_RELIABILITY_RELIABLE, 1000000000);
+  }
+
+  if (qos.durability == RMW_QOS_POLICY_DURABILITY_TRANSIENT_LOCAL) {
+    int2dds_datawriter_qos_set_durability(writer_qos, INT2DDS_QOS_DURABILITY_TRANSIENT_LOCAL);
+  } else {
+    int2dds_datawriter_qos_set_durability(writer_qos, INT2DDS_QOS_DURABILITY_VOLATILE);
+  }
+}
+
+void
+set_reader_reliability_durability(
+  Int2DdsDataReaderQos * reader_qos, const rmw_qos_profile_t & qos)
+{
+  if (qos.reliability == RMW_QOS_POLICY_RELIABILITY_BEST_EFFORT) {
+    int2dds_datareader_qos_set_reliability(reader_qos, INT2DDS_QOS_RELIABILITY_BEST_EFFORT, 0);
+  } else {
+    int2dds_datareader_qos_set_reliability(
+      reader_qos, INT2DDS_QOS_RELIABILITY_RELIABLE, 1000000000);
+  }
+
+  if (qos.durability == RMW_QOS_POLICY_DURABILITY_TRANSIENT_LOCAL) {
+    int2dds_datareader_qos_set_durability(reader_qos, INT2DDS_QOS_DURABILITY_TRANSIENT_LOCAL);
+  } else {
+    int2dds_datareader_qos_set_durability(reader_qos, INT2DDS_QOS_DURABILITY_VOLATILE);
   }
 }
 
@@ -158,6 +325,9 @@ rmw_create_client(
 
   cli_data->type_support = introspection_ts;
   cli_data->qos = *qos_policies;
+  // Resolve system-default values up front so the profile stored here is the one
+  // actually applied below, which is what rmw_client_*_get_actual_qos reports.
+  rmw_int2dds_cpp::resolve_actual_qos(&cli_data->qos);
   cli_data->gid = rmw_int2dds_cpp::generate_client_gid();
   cli_data->node_data = node_data;
   cli_data->service_name = service_name;
@@ -202,10 +372,11 @@ rmw_create_client(
   Int2DdsDataWriterQos * writer_qos = nullptr;
   int2dds_datawriter_qos_create_default(&writer_qos);
   rmw_int2dds_cpp::apply_type_hash_user_data(
-    writer_qos, rmw_int2dds_cpp::encode_service_request_type_hash_user_data(introspection_ts));
-  // Clients use Reliable
-  int2dds_datawriter_qos_set_reliability(writer_qos, INT2DDS_QOS_RELIABILITY_RELIABLE, 1000000000);
-  int2dds_datawriter_qos_set_durability(writer_qos, INT2DDS_QOS_DURABILITY_VOLATILE);
+    writer_qos,
+    rmw_int2dds_cpp::encode_service_request_type_hash_user_data(introspection_ts) +
+    rmw_int2dds_cpp::encode_service_type_hash_user_data(introspection_ts));
+  set_writer_reliability_durability(writer_qos, cli_data->qos);
+  set_writer_deadline_lifespan_liveliness(writer_qos, cli_data->qos);
   set_writer_history(writer_qos, cli_data->qos);
 
   // Create request DataWriter
@@ -213,6 +384,8 @@ rmw_create_client(
     context_data->default_publisher,
     cli_data->request_topic,
     writer_qos,
+    nullptr,
+    0,
     &cli_data->request_writer);
   int2dds_datawriter_qos_destroy(writer_qos);
 
@@ -228,9 +401,11 @@ rmw_create_client(
   Int2DdsDataReaderQos * reader_qos = nullptr;
   int2dds_datareader_qos_create_default(&reader_qos);
   rmw_int2dds_cpp::apply_type_hash_user_data(
-    reader_qos, rmw_int2dds_cpp::encode_service_response_type_hash_user_data(introspection_ts));
-  int2dds_datareader_qos_set_reliability(reader_qos, INT2DDS_QOS_RELIABILITY_RELIABLE, 1000000000);
-  int2dds_datareader_qos_set_durability(reader_qos, INT2DDS_QOS_DURABILITY_VOLATILE);
+    reader_qos,
+    rmw_int2dds_cpp::encode_service_response_type_hash_user_data(introspection_ts) +
+    rmw_int2dds_cpp::encode_service_type_hash_user_data(introspection_ts));
+  set_reader_reliability_durability(reader_qos, cli_data->qos);
+  set_reader_deadline_liveliness(reader_qos, cli_data->qos);
   set_reader_history(reader_qos, cli_data->qos);
 
   // Create response DataReader
@@ -238,6 +413,8 @@ rmw_create_client(
     context_data->default_subscriber,
     cli_data->response_topic,
     reader_qos,
+    nullptr,
+    0,
     &cli_data->response_reader);
   int2dds_datareader_qos_destroy(reader_qos);
 
@@ -305,10 +482,12 @@ rmw_create_client(
     }
     rmw_int2dds_cpp::common_add_local_entity(
       context_data, request_writer_gid, request_topic_name, request_type_name,
-      rosidl_type_hash_t{}, cli_data->qos, /*is_reader=*/false);
+      rosidl_type_hash_t{}, cli_data->qos, /*is_reader=*/false,
+      rmw_int2dds_cpp::get_service_type_hash(introspection_ts));
     rmw_int2dds_cpp::common_add_local_entity(
       context_data, response_reader_gid, response_topic_name, response_type_name,
-      rosidl_type_hash_t{}, cli_data->qos, /*is_reader=*/true);
+      rosidl_type_hash_t{}, cli_data->qos, /*is_reader=*/true,
+      rmw_int2dds_cpp::get_service_type_hash(introspection_ts));
     context_data->common->add_client_graph(
       request_writer_gid, response_reader_gid, node_data->name, node_data->namespace_);
   }

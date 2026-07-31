@@ -30,6 +30,15 @@
 #include "rmw/get_service_names_and_types.h"
 #include "rmw/get_topic_endpoint_info.h"
 #include "rmw/get_topic_names_and_types.h"
+
+// ROS 2 Lyrical adds per-service endpoint introspection (rmw 7.9, ros2/rmw#371);
+// older distros lack both the rmw headers and the GraphCache support for it.
+#if __has_include("rmw/get_service_endpoint_info.h")
+#define RMW_INT2DDS_HAS_SERVICE_ENDPOINT_INFO 1
+#include "rmw/get_service_endpoint_info.h"
+#include "rmw/service_endpoint_info.h"
+#include "rmw/service_endpoint_info_array.h"
+#endif
 #include "rmw/names_and_types.h"
 #include "rmw/sanity_checks.h"
 #include "rmw/topic_endpoint_info_array.h"
@@ -182,28 +191,29 @@ static void for_each_publication_snapshot(
   int timeout_ms,
   const std::function<void(Int2DdsPublicationBuiltinTopicData *)> & callback)
 {
-  (void)timeout_ms;
-  uintptr_t count = 0;
+  // The count/by-index accessors were consolidated into a single snapshot sequence.
+  Int2DdsPublicationBuiltinTopicDataSeq * seq = nullptr;
   if (
-    int2dds_participant_get_discovered_publication_count(
-      context_data->participant, &count) != INT2DDS_RET_OK)
+    int2dds_participant_take_discovered_publications_snapshot(
+      context_data->participant, timeout_ms, &seq) != INT2DDS_RET_OK ||
+    seq == nullptr)
   {
     return;
   }
 
-  for (uintptr_t i = 0; i < count; ++i) {
-    Int2DdsPublicationBuiltinTopicData * publication = nullptr;
-    if (
-      int2dds_participant_get_discovered_publication_data_by_index(
-        context_data->participant, i, &publication) != INT2DDS_RET_OK ||
-      publication == nullptr)
-    {
-      continue;
+  uintptr_t count = 0;
+  if (int2dds_publication_builtin_topic_data_seq_length(seq, &count) == INT2DDS_RET_OK) {
+    for (uintptr_t i = 0; i < count; ++i) {
+      Int2DdsPublicationBuiltinTopicData * publication = nullptr;
+      if (
+        int2dds_publication_builtin_topic_data_seq_get(seq, i, &publication) == INT2DDS_RET_OK &&
+        publication != nullptr)
+      {
+        callback(publication);
+      }
     }
-
-    callback(publication);
-    int2dds_publication_builtin_topic_data_destroy(publication);
   }
+  int2dds_publication_builtin_topic_data_seq_delete(seq);
 }
 
 static void for_each_subscription_snapshot(
@@ -211,28 +221,28 @@ static void for_each_subscription_snapshot(
   int timeout_ms,
   const std::function<void(Int2DdsSubscriptionBuiltinTopicData *)> & callback)
 {
-  (void)timeout_ms;
-  uintptr_t count = 0;
+  Int2DdsSubscriptionBuiltinTopicDataSeq * seq = nullptr;
   if (
-    int2dds_participant_get_discovered_subscription_count(
-      context_data->participant, &count) != INT2DDS_RET_OK)
+    int2dds_participant_take_discovered_subscriptions_snapshot(
+      context_data->participant, timeout_ms, &seq) != INT2DDS_RET_OK ||
+    seq == nullptr)
   {
     return;
   }
 
-  for (uintptr_t i = 0; i < count; ++i) {
-    Int2DdsSubscriptionBuiltinTopicData * subscription = nullptr;
-    if (
-      int2dds_participant_get_discovered_subscription_data_by_index(
-        context_data->participant, i, &subscription) != INT2DDS_RET_OK ||
-      subscription == nullptr)
-    {
-      continue;
+  uintptr_t count = 0;
+  if (int2dds_subscription_builtin_topic_data_seq_length(seq, &count) == INT2DDS_RET_OK) {
+    for (uintptr_t i = 0; i < count; ++i) {
+      Int2DdsSubscriptionBuiltinTopicData * subscription = nullptr;
+      if (
+        int2dds_subscription_builtin_topic_data_seq_get(seq, i, &subscription) == INT2DDS_RET_OK &&
+        subscription != nullptr)
+      {
+        callback(subscription);
+      }
     }
-
-    callback(subscription);
-    int2dds_subscription_builtin_topic_data_destroy(subscription);
   }
+  int2dds_subscription_builtin_topic_data_seq_delete(seq);
 }
 
 static std::set<std::array<uint8_t, 12>> get_remote_participant_keys(
@@ -342,39 +352,73 @@ static rmw_qos_profile_t build_remote_qos(
   return qos;
 }
 
-// Reads an endpoint's USER_DATA via the given getter and parses the rosidl type hash
-// ("typehash=...;") that rmw_publisher/rmw_subscription encoded at creation, so
-// get_*_info_by_topic reports the real type hash instead of a zero (INVALID) value.
-// Returns a zero hash when no typehash key is present.
+// Reads an endpoint's USER_DATA via the given getter and isolates one "key=value;"
+// pair. The user_data may carry several pairs and trailing padding that the
+// rmw_dds_common parsers do not tolerate, and a bare find() of "typehash=" would
+// also match inside "sertypehash=", so a match must start the buffer or follow ';'.
+template<typename DataT>
+static std::string read_endpoint_user_data_pair(
+  DataT * data,
+  Int2DdsRet (* get_user_data)(const DataT *, uint8_t *, uintptr_t, uintptr_t *),
+  const std::string & key)
+{
+  uintptr_t size = 0;
+  if (get_user_data(data, nullptr, 0, &size) != INT2DDS_RET_OK || size == 0) {
+    return {};
+  }
+  std::vector<uint8_t> buf(size);
+  if (get_user_data(data, buf.data(), buf.size(), &size) != INT2DDS_RET_OK) {
+    return {};
+  }
+  const std::string ud(reinterpret_cast<const char *>(buf.data()), size);
+  std::string::size_type pos = ud.find(key);
+  while (pos != std::string::npos && pos != 0 && ud[pos - 1] != ';') {
+    pos = ud.find(key, pos + 1);
+  }
+  if (pos == std::string::npos) {
+    return {};
+  }
+  const auto semi = ud.find(';', pos);
+  return (semi == std::string::npos) ? (ud.substr(pos) + ';') : ud.substr(pos, semi - pos + 1);
+}
+
+// Parses the rosidl type hash ("typehash=...;") that rmw_publisher/rmw_subscription
+// encoded at creation, so get_*_info_by_topic reports the real type hash instead of
+// a zero (INVALID) value. Returns a zero hash when no typehash key is present.
 template<typename DataT>
 static rosidl_type_hash_t read_endpoint_type_hash(
   DataT * data,
   Int2DdsRet (* get_user_data)(const DataT *, uint8_t *, uintptr_t, uintptr_t *))
 {
   rosidl_type_hash_t type_hash{};
-  uintptr_t size = 0;
-  if (get_user_data(data, nullptr, 0, &size) != INT2DDS_RET_OK || size == 0) {
+  const std::string pair = read_endpoint_user_data_pair(data, get_user_data, "typehash=");
+  if (pair.empty()) {
     return type_hash;
   }
-  std::vector<uint8_t> buf(size);
-  if (get_user_data(data, buf.data(), buf.size(), &size) != INT2DDS_RET_OK) {
-    return type_hash;
-  }
-  // Isolate the single "typehash=<value>;" pair before handing it to the standard
-  // parser: the user_data may carry other pairs and trailing padding that the
-  // rmw_dds_common parser does not tolerate.
-  const std::string ud(reinterpret_cast<const char *>(buf.data()), size);
-  const std::string key = "typehash=";
-  const auto pos = ud.find(key);
-  if (pos == std::string::npos) {
-    return type_hash;
-  }
-  const auto semi = ud.find(';', pos);
-  const std::string pair = (semi == std::string::npos) ?
-    (ud.substr(pos) + ';') : ud.substr(pos, semi - pos + 1);
   rmw_dds_common::parse_type_hash_from_user_data(
     reinterpret_cast<const uint8_t *>(pair.data()), pair.size(), type_hash);
   return type_hash;
+}
+
+// Parses the service type hash ("sertypehash=...;") that Lyrical+ service/client
+// endpoints append to USER_DATA. Zero hash when absent or on older distros.
+template<typename DataT>
+static rosidl_type_hash_t read_endpoint_service_type_hash(
+  DataT * data,
+  Int2DdsRet (* get_user_data)(const DataT *, uint8_t *, uintptr_t, uintptr_t *))
+{
+  rosidl_type_hash_t service_type_hash{};
+#ifdef RMW_INT2DDS_HAS_SERVICE_ENDPOINT_INFO
+  const std::string pair = read_endpoint_user_data_pair(data, get_user_data, "sertypehash=");
+  if (!pair.empty()) {
+    rmw_dds_common::parse_sertype_hash_from_user_data(
+      reinterpret_cast<const uint8_t *>(pair.data()), pair.size(), service_type_hash);
+  }
+#else
+  (void)data;
+  (void)get_user_data;
+#endif
+  return service_type_hash;
 }
 
 // ros_discovery_info joins with the topic/type recorded here. Reconciles against
@@ -455,6 +499,7 @@ static void sync_remote_entities_to_common(rmw_int2dds_cpp::ContextData * contex
     std::array<uint8_t, 12> participant_key;
     rmw_qos_profile_t qos;
     rosidl_type_hash_t type_hash;
+    rosidl_type_hash_t service_type_hash;
   };
   std::map<std::array<uint8_t, RMW_GID_STORAGE_SIZE>, RemoteEntity> current;
 
@@ -510,6 +555,8 @@ static void sync_remote_entities_to_common(rmw_int2dds_cpp::ContextData * contex
           reliability_kind, durability_kind, liveliness_kind, lease_sec, lease_nsec,
           deadline_sec, deadline_nsec, lifespan_sec, lifespan_nsec),
         read_endpoint_type_hash(
+          publication, int2dds_publication_builtin_topic_data_get_user_data),
+        read_endpoint_service_type_hash(
           publication, int2dds_publication_builtin_topic_data_get_user_data)};
     });
 
@@ -565,6 +612,8 @@ static void sync_remote_entities_to_common(rmw_int2dds_cpp::ContextData * contex
           reliability_kind, durability_kind, liveliness_kind, lease_sec, lease_nsec,
           deadline_sec, deadline_nsec, 0x7fffffff, 0x7fffffffu),
         read_endpoint_type_hash(
+          subscription, int2dds_subscription_builtin_topic_data_get_user_data),
+        read_endpoint_service_type_hash(
           subscription, int2dds_subscription_builtin_topic_data_get_user_data)};
     });
 
@@ -594,9 +643,18 @@ static void sync_remote_entities_to_common(rmw_int2dds_cpp::ContextData * contex
     // every discovered endpoint reported as _CREATED_BY_BARE_DDS_APP_.
     rmw_gid_t participant_gid = {};
     std::memcpy(participant_gid.data, entry.second.participant_key.data(), 12);
+#ifdef RMW_INT2DDS_HAS_SERVICE_ENDPOINT_INFO
+    // Only service endpoints carry a sertypehash; version 0 means unset.
+    const rosidl_type_hash_t & service_type_hash = entry.second.service_type_hash;
+    context_data->common->graph_cache.add_entity(
+      gid, entry.second.topic_name, entry.second.type_name, entry.second.type_hash,
+      participant_gid, entry.second.qos, entry.second.is_reader,
+      service_type_hash.version != 0 ? &service_type_hash : nullptr);
+#else
     context_data->common->graph_cache.add_entity(
       gid, entry.second.topic_name, entry.second.type_name, entry.second.type_hash,
       participant_gid, entry.second.qos, entry.second.is_reader);
+#endif
     synced[entry.first] = entry.second.is_reader;
   }
 }
@@ -1195,4 +1253,105 @@ rmw_count_services(
   const std::string request_topic = "rq" + std::string(service_name) + "Request";
   return context_data->common->graph_cache.get_reader_count(request_topic, count);
 }
+
+#ifdef RMW_INT2DDS_HAS_SERVICE_ENDPOINT_INFO
+// A service travels as two mangled DDS topics: "rq<service>Request" and
+// "rr<service>Reply" (the names rmw_service.cpp/rmw_client.cpp create; note
+// ros_service_to_dds_response_topic() in topic_names.cpp says "Response" but is
+// not what the service/client creation path uses). A client owns a reply reader
+// plus a request writer, a server the mirror pair; the GraphCache assembles
+// per-node service endpoint entries from the reader/writer views of the two topics.
+static rmw_ret_t get_service_endpoints_info(
+  const rmw_node_t * node,
+  rcutils_allocator_t * allocator,
+  const char * service_name,
+  bool no_mangle,
+  bool servers,
+  rmw_service_endpoint_info_array_t * endpoints_info)
+{
+  rmw_int2dds_cpp::ContextData * context_data = nullptr;
+  rmw_ret_t ret = check_node_and_get_context(node, &context_data);
+  if (ret != RMW_RET_OK) {
+    return ret;
+  }
+
+  RMW_CHECK_ARGUMENT_FOR_NULL(service_name, RMW_RET_INVALID_ARGUMENT);
+  ret = validate_allocator(allocator);
+  if (ret != RMW_RET_OK) {
+    return ret;
+  }
+  RMW_CHECK_ARGUMENT_FOR_NULL(endpoints_info, RMW_RET_INVALID_ARGUMENT);
+  if (rmw_service_endpoint_info_array_check_zero(endpoints_info) != RMW_RET_OK) {
+    RMW_SET_ERROR_MSG("service endpoint info array is not zero initialized");
+    return RMW_RET_INVALID_ARGUMENT;
+  }
+  if (no_mangle) {
+    // The DDS topics backing a service only exist in mangled form, so an
+    // unmangled lookup has nothing to name (same contract as rmw_fastrtps).
+    RMW_SET_ERROR_MSG(
+      "'no_mangle' is not supported for services; use "
+      "rmw_get_publishers_info_by_topic / rmw_get_subscriptions_info_by_topic "
+      "on the mangled topic names instead");
+    return RMW_RET_INVALID_ARGUMENT;
+  }
+
+  sync_remote_entities_to_common(context_data);
+
+  const std::string request_topic = "rq" + std::string(service_name) + "Request";
+  const std::string response_topic = "rr" + std::string(service_name) + "Reply";
+  const std::string & reader_topic = servers ? request_topic : response_topic;
+  const std::string & writer_topic = servers ? response_topic : request_topic;
+
+  rmw_topic_endpoint_info_array_t readers_info =
+    rmw_get_zero_initialized_topic_endpoint_info_array();
+  rmw_topic_endpoint_info_array_t writers_info =
+    rmw_get_zero_initialized_topic_endpoint_info_array();
+
+  ret = context_data->common->graph_cache.get_readers_info_by_topic(
+    reader_topic, demangle_dds_service_type_name, allocator, &readers_info);
+  if (ret == RMW_RET_OK) {
+    ret = context_data->common->graph_cache.get_writers_info_by_topic(
+      writer_topic, demangle_dds_service_type_name, allocator, &writers_info);
+  }
+  if (ret == RMW_RET_OK) {
+    ret = servers ?
+      context_data->common->graph_cache.get_servers_info_by_service(
+      &readers_info, &writers_info, allocator, endpoints_info) :
+      context_data->common->graph_cache.get_clients_info_by_service(
+      &readers_info, &writers_info, allocator, endpoints_info);
+  }
+
+  // The two intermediate views are temporary on success and failure alike.
+  const rmw_ret_t fini_readers = rmw_topic_endpoint_info_array_fini(&readers_info, allocator);
+  const rmw_ret_t fini_writers = rmw_topic_endpoint_info_array_fini(&writers_info, allocator);
+  if (ret == RMW_RET_OK && (fini_readers != RMW_RET_OK || fini_writers != RMW_RET_OK)) {
+    ret = RMW_RET_ERROR;
+  }
+  return ret;
+}
+
+rmw_ret_t
+rmw_get_clients_info_by_service(
+  const rmw_node_t * node,
+  rcutils_allocator_t * allocator,
+  const char * service_name,
+  bool no_mangle,
+  rmw_service_endpoint_info_array_t * clients_info)
+{
+  return get_service_endpoints_info(
+    node, allocator, service_name, no_mangle, false, clients_info);
+}
+
+rmw_ret_t
+rmw_get_servers_info_by_service(
+  const rmw_node_t * node,
+  rcutils_allocator_t * allocator,
+  const char * service_name,
+  bool no_mangle,
+  rmw_service_endpoint_info_array_t * servers_info)
+{
+  return get_service_endpoints_info(
+    node, allocator, service_name, no_mangle, true, servers_info);
+}
+#endif  // RMW_INT2DDS_HAS_SERVICE_ENDPOINT_INFO
 }  // extern "C"

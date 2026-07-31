@@ -14,6 +14,7 @@
 
 #include <atomic>
 #include <cstring>
+#include <random>
 
 #ifdef _WIN32
 #include <process.h>
@@ -56,9 +57,15 @@ rmw_gid_t generate_gid(uint8_t entity_type)
   // Bytes 0-3: Prefix "INT2"
   std::memcpy(&gid.data[0], GID_PREFIX, 4);
 
-  // Bytes 4-7: Process ID (for uniqueness across processes)
-  uint32_t pid = static_cast<uint32_t>(getpid());
-  std::memcpy(&gid.data[4], &pid, sizeof(pid));
+  // Bytes 4-7: per-process identity. A random value generated once per process
+  // (not the raw PID) so two processes on different hosts do not collide when
+  // PIDs happen to match -- the RPC correlation key (bytes 4..11) then stays
+  // unique across hosts too. Wire size is unchanged (still 4 bytes).
+  static const uint32_t process_id = []() {
+      std::random_device rd;
+      return static_cast<uint32_t>(rd());
+    }();
+  std::memcpy(&gid.data[4], &process_id, sizeof(process_id));
 
   // Bytes 8-11: Monotonic counter
   uint32_t counter = g_gid_counter.fetch_add(1);

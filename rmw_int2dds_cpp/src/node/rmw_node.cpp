@@ -17,6 +17,7 @@
 #include <chrono>
 #include <cstdio>
 #include <cstring>
+#include <mutex>
 #include <string>
 #include <thread>
 #include <vector>
@@ -27,6 +28,7 @@
 #include "rmw/validate_namespace.h"
 #include "rmw/validate_node_name.h"
 
+#include "../graph/discovery.hpp"
 #include "rcutils/allocator.h"
 #include "rcutils/strdup.h"
 
@@ -273,6 +275,21 @@ rmw_create_node(
     return nullptr;
   }
 
+  // Bring the DDS resources back if rmw_destroy_node released them when the last
+  // node went away. Without this the context would be usable only once, which is
+  // how rclcpp exercises it: one context, nodes created and destroyed repeatedly.
+  // rmw_fastrtps does the same from increment_context_impl_ref_count().
+  {
+    std::lock_guard<std::mutex> lock(context_data->mutex);
+    if (context_data->participant == nullptr) {
+      if (rmw_int2dds_cpp::acquire_context_resources(
+          context_data, context->options.enclave) != RMW_RET_OK)
+      {
+        return nullptr;
+      }
+    }
+  }
+
   // Create node data
   auto * node_data = new (std::nothrow) rmw_int2dds_cpp::NodeData();
   if (node_data == nullptr) {
@@ -409,9 +426,40 @@ rmw_destroy_node(rmw_node_t * node)
     node_data->graph_guard_condition = nullptr;
   }
 
-  // Decrement context reference count
+  // Delete this node's publisher DataWriters now to free their history caches.
+  // lyrical rclpy defers publisher teardown (Node.destroy_node ->
+  // handle.destroy_when_not_in_use), so rmw_destroy_publisher may not run before
+  // the node/participant is gone, orphaning each cycle's DataWriter cache. The
+  // datawriter is nulled so a later rmw_destroy_publisher skips it.
+  {
+    std::lock_guard<std::mutex> lock(node_data->entities_mutex);
+    for (auto * pd : node_data->live_publishers) {
+      if (pd != nullptr && pd->datawriter != nullptr) {
+        int2dds_delete_datawriter(pd->datawriter);
+        pd->datawriter = nullptr;
+      }
+    }
+    node_data->live_publishers.clear();
+  }
+
+  // Decrement context reference count. Release the DDS resources once the last
+  // node is gone instead of waiting for rmw_context_fini: a client library may
+  // keep the context object alive (rclcpp holds internal references to it), so
+  // rmw_context_fini never runs and every node create/destroy cycle leaks the
+  // participant's sockets, eventfds and epoll instances.
+  //
+  // rmw_create_node brings the resources back when a node is created on a
+  // context that has none, so a context stays reusable. This mirrors
+  // rmw_fastrtps, where decrement_context_impl_ref_count() and
+  // increment_context_impl_ref_count() are symmetric. Releasing without that
+  // symmetric path left the context permanently unusable and broke every
+  // rclcpp test that recreates nodes on one context.
   if (node_data->context_data != nullptr) {
-    node_data->context_data->ref_count--;
+    auto * ctx = node_data->context_data;
+    std::lock_guard<std::mutex> lock(ctx->mutex);
+    if (--ctx->ref_count <= 1 && ctx->participant != nullptr) {
+      rmw_int2dds_cpp::release_context_resources(ctx);
+    }
   }
 
   // Free name and namespace
@@ -473,7 +521,7 @@ rmw_node_get_graph_guard_condition(const rmw_node_t * node)
   graph_guard_condition->context = node->context;
 
   node_data->graph_guard_condition = graph_guard_condition;
-  (void)int2dds_guard_condition_set_trigger_value(gc_data->guard_condition, true);
+  (void)int2dds_guardcondition_set_trigger_value(gc_data->guard_condition, true);
   return node_data->graph_guard_condition;
 }
 }  // extern "C"

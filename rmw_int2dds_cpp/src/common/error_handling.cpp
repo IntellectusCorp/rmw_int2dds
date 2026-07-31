@@ -31,8 +31,6 @@ rmw_ret_t convert_int2dds_ret(Int2DdsRet ret)
       return RMW_RET_TIMEOUT;
     case INT2DDS_RET_UNSUPPORTED:
       return RMW_RET_UNSUPPORTED;
-    case INT2DDS_RET_BAD_ALLOC:
-      return RMW_RET_BAD_ALLOC;
     case INT2DDS_RET_INVALID_ARGUMENT:
       return RMW_RET_INVALID_ARGUMENT;
     case INT2DDS_RET_NO_DATA:
@@ -57,8 +55,6 @@ const char * int2dds_ret_to_string(Int2DdsRet ret)
       return "TIMEOUT";
     case INT2DDS_RET_UNSUPPORTED:
       return "UNSUPPORTED";
-    case INT2DDS_RET_BAD_ALLOC:
-      return "BAD_ALLOC";
     case INT2DDS_RET_INVALID_ARGUMENT:
       return "INVALID_ARGUMENT";
     case INT2DDS_RET_ALREADY_DELETED:

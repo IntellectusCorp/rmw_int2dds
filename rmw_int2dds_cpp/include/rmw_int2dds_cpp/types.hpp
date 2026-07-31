@@ -63,6 +63,7 @@ constexpr int32_t INT2DDS_EXTENSIBILITY_MUTABLE = 2;
 // Forward declaration
 struct ServiceData;
 struct ClientData;
+struct PublisherData;
 
 /// One user event-callback registration (rmw_event_callback_t plus the backlog
 /// of occurrences that fired before the callback was set). Fired from int2dds
@@ -93,6 +94,14 @@ struct ContextData
   Int2DdsDataReader * discovery_reader{nullptr};
 
   size_t domain_id{0};
+  // Precomputed "ip:port,..." list wired into int2dds SPDP unicast discovery via
+  // the "int2dds.initial_peers" participant property. Empty unless the user set
+  // rmw_discovery_options static_peers. Computed once in rmw_init.
+  std::string initial_peers;
+  // True when the user requested localhost-only discovery. Applied via
+  // multicast_ttl=0 so multicast SPDP stays on the host (remote hosts do not
+  // auto-discover this participant; local discovery is unaffected). Set in rmw_init.
+  bool localhost_only{false};
   bool is_shutdown{false};
   std::atomic<int> ref_count{0};
   std::mutex mutex;
@@ -104,6 +113,26 @@ struct ContextData
   std::mutex remote_sync_mutex;
   std::map<std::array<uint8_t, RMW_GID_STORAGE_SIZE>, bool> synced_remote_entities;
 };
+
+/// Create the DDS resources a context needs: participant factory, participant,
+/// default publisher/subscriber, graph guard condition and node-graph discovery.
+/// Uses context_data->domain_id, so that must be set first.
+///
+/// rmw_destroy_node releases these once the last node is gone (a client library
+/// may keep the context alive, so rmw_context_fini may never run). rmw_create_node
+/// calls this again to bring them back, mirroring rmw_fastrtps, where
+/// increment_context_impl_ref_count() recreates what
+/// decrement_context_impl_ref_count() released. Rolls back on failure and leaves
+/// every pointer null.
+///
+/// \return RMW_RET_OK on success, otherwise the error is already set.
+rmw_ret_t
+acquire_context_resources(ContextData * context_data, const char * enclave);
+
+/// Release what acquire_context_resources() created, nulling every pointer so a
+/// later acquire or fini is safe.
+void
+release_context_resources(ContextData * context_data);
 
 /// Node implementation data
 struct NodeData
@@ -122,6 +151,7 @@ struct NodeData
   std::vector<rmw_gid_t> clients;
   std::vector<ServiceData *> live_services;
   std::vector<ClientData *> live_clients;
+  std::vector<PublisherData *> live_publishers;
 };
 
 /// Publisher implementation data
