@@ -75,9 +75,10 @@ const char * const kLibraryIdentifier = "rmw_int2dds_dynamic";
 
 enum MemberKind
 {
-  MEMBER_LEAF,        // scalar or string
-  MEMBER_COLLECTION,  // array or sequence of a primitive/string element
-  MEMBER_NESTED       // nested struct (flattened)
+  MEMBER_LEAF,               // scalar or string
+  MEMBER_COLLECTION,         // array or sequence of a primitive/string element
+  MEMBER_NESTED,             // nested struct (flattened)
+  MEMBER_STRUCT_COLLECTION   // array or sequence of a nested struct (registry-resolved)
 };
 
 // A struct member. LEAF/COLLECTION members carry the int2dds field name they were flattened
@@ -122,6 +123,10 @@ struct DataHandle
   bool is_collection = false;
   std::string flat_name;                       // collection view: the collection's field name
   int element_code = 0;                        // collection view: element INT2DDS_FIELD_*
+  // Struct-collection support (array/sequence of nested struct):
+  std::string path_prefix;                     // struct element view: prepended to leaf paths ("pts[0]")
+  bool is_struct_collection = false;           // view over a sequence/array of structs
+  const std::vector<Member> * elem_members = nullptr;  // struct-collection: element struct members
 };
 
 BuilderHandle * builder_of(rosidl_dynamic_typesupport_dynamic_type_builder_impl_t * h)
@@ -141,6 +146,52 @@ const DataHandle * data_of(const rosidl_dynamic_typesupport_dynamic_data_impl_t 
   return static_cast<const DataHandle *>(h->handle);
 }
 
+// Rebuild an int2dds type_info from a decoded Member tree. Used to describe the element type
+// of an array/sequence-of-nested to the core builders (int2dds_type_info_add_*_of_nested_field),
+// which take an Int2DdsTypeInfo. Returns nullptr on failure; caller owns and must destroy it.
+Int2DdsTypeInfo * rebuild_type_info(const std::string & name, const std::vector<Member> & members)
+{
+  Int2DdsTypeInfo * ti = nullptr;
+  if (int2dds_type_info_create(name.c_str(), 0, &ti) != INT2DDS_RET_OK || !ti) {
+    return nullptr;
+  }
+  for (const auto & m : members) {
+    bool ok = true;
+    switch (m.kind) {
+      case MEMBER_LEAF:
+        ok = int2dds_type_info_add_field(ti, m.name.c_str(), m.type_code, 0) == INT2DDS_RET_OK;
+        break;
+      case MEMBER_COLLECTION:
+        ok = (m.is_array ?
+          int2dds_type_info_add_array_field(ti, m.name.c_str(), m.type_code, m.extent, 0) :
+          int2dds_type_info_add_sequence_field(ti, m.name.c_str(), m.type_code, m.extent, 0)) ==
+          INT2DDS_RET_OK;
+        break;
+      case MEMBER_NESTED: {
+          Int2DdsTypeInfo * sub = rebuild_type_info(m.name, m.sub);
+          ok = sub &&
+            int2dds_type_info_add_nested_field(ti, m.name.c_str(), sub, 0) == INT2DDS_RET_OK;
+          if (sub) {int2dds_type_info_destroy(sub);}
+          break;
+        }
+      case MEMBER_STRUCT_COLLECTION: {
+          Int2DdsTypeInfo * sub = rebuild_type_info(m.name, m.sub);
+          ok = sub && ((m.is_array ?
+            int2dds_type_info_add_array_of_nested_field(ti, m.name.c_str(), sub, m.extent, 0) :
+            int2dds_type_info_add_sequence_of_nested_field(ti, m.name.c_str(), sub, m.extent, 0)) ==
+            INT2DDS_RET_OK);
+          if (sub) {int2dds_type_info_destroy(sub);}
+          break;
+        }
+    }
+    if (!ok) {
+      int2dds_type_info_destroy(ti);
+      return nullptr;
+    }
+  }
+  return ti;
+}
+
 // Build the flat-sample path for member/element `id` in view `d`. Returns false when a
 // struct id is out of range or names a member that must be loaned (nested/collection).
 bool resolve_path(
@@ -157,7 +208,7 @@ bool resolve_path(
   if (m.kind != MEMBER_LEAF) {
     return false;
   }
-  out = m.flat_name;
+  out = d->path_prefix.empty() ? m.flat_name : d->path_prefix + "." + m.flat_name;
   return true;
 }
 
@@ -657,34 +708,85 @@ dtb_add_complex_member_builder(
   return add_complex_from_members(builder_of(builder), name, name_length, nb->members);
 }
 
-// Arrays/sequences of nested structs cannot be flattened at a static element count; reject
-// them rather than build a type that would misdecode. The array/bounded-sequence slots pass
-// a trailing length, the unbounded-sequence slot does not.
+// Array/sequence of nested struct. The element type is rebuilt as its own type_info and passed
+// to the core add_*_of_nested_field builders, which capture the element TypeObject in the parent
+// type's dependency closure; decode_flat then resolves the element via a TypeRegistry. Elements
+// are read back through indexed/dotted paths ("pts[i].x").
+static rcutils_ret_t add_struct_collection(
+  rosidl_dynamic_typesupport_dynamic_type_builder_impl_t * builder,
+  const char * name, size_t name_length,
+  rosidl_dynamic_typesupport_dynamic_type_impl_t * nested_struct,
+  bool is_array, uint32_t extent)
+{
+  auto * b = builder_of(builder);
+  auto * nt = type_of(nested_struct);
+  if (!b || !b->info || !nt) {
+    RCUTILS_SET_ERROR_MSG("invalid builder or nested type for struct collection");
+    return RCUTILS_RET_ERROR;
+  }
+  Int2DdsTypeInfo * elem = rebuild_type_info(nt->name, nt->members);
+  if (!elem) {
+    RCUTILS_SET_ERROR_MSG("failed to rebuild nested element type_info");
+    return RCUTILS_RET_ERROR;
+  }
+  std::string f(name, name_length);
+  Int2DdsRet r = is_array ?
+    int2dds_type_info_add_array_of_nested_field(b->info, f.c_str(), elem, extent, 0) :
+    int2dds_type_info_add_sequence_of_nested_field(b->info, f.c_str(), elem, extent, 0);
+  int2dds_type_info_destroy(elem);
+  if (r != INT2DDS_RET_OK) {
+    RCUTILS_SET_ERROR_MSG("int2dds add_*_of_nested_field failed");
+    return RCUTILS_RET_ERROR;
+  }
+  Member m;
+  m.name = f;
+  m.kind = MEMBER_STRUCT_COLLECTION;
+  m.is_array = is_array;
+  m.extent = extent;
+  m.flat_name = f;
+  m.sub = nt->members;  // element struct members, for the read-side element view
+  b->members.push_back(std::move(m));
+  return RCUTILS_RET_OK;
+}
+
 rcutils_ret_t
-dtb_add_complex_sized_unsupported(
+dtb_add_complex_array_member(
   rosidl_dynamic_typesupport_serialization_support_impl_t * ss,
   rosidl_dynamic_typesupport_dynamic_type_builder_impl_t * builder,
   rosidl_dynamic_typesupport_member_id_t id,
   const char * name, size_t name_length,
   const char * default_value, size_t default_value_length,
   rosidl_dynamic_typesupport_dynamic_type_impl_t * nested_struct,
-  size_t bound)
+  size_t array_length)
 {
   (void)ss;
-  (void)builder;
   (void)id;
-  (void)name;
-  (void)name_length;
   (void)default_value;
   (void)default_value_length;
-  (void)nested_struct;
-  (void)bound;
-  RCUTILS_SET_ERROR_MSG("arrays/sequences of nested structs are not supported");
-  return RCUTILS_RET_ERROR;
+  return add_struct_collection(
+    builder, name, name_length, nested_struct, true, static_cast<uint32_t>(array_length));
 }
 
 rcutils_ret_t
-dtb_add_complex_unbounded_unsupported(
+dtb_add_complex_bounded_sequence_member(
+  rosidl_dynamic_typesupport_serialization_support_impl_t * ss,
+  rosidl_dynamic_typesupport_dynamic_type_builder_impl_t * builder,
+  rosidl_dynamic_typesupport_member_id_t id,
+  const char * name, size_t name_length,
+  const char * default_value, size_t default_value_length,
+  rosidl_dynamic_typesupport_dynamic_type_impl_t * nested_struct,
+  size_t sequence_bound)
+{
+  (void)ss;
+  (void)id;
+  (void)default_value;
+  (void)default_value_length;
+  return add_struct_collection(
+    builder, name, name_length, nested_struct, false, static_cast<uint32_t>(sequence_bound));
+}
+
+rcutils_ret_t
+dtb_add_complex_unbounded_sequence_member(
   rosidl_dynamic_typesupport_serialization_support_impl_t * ss,
   rosidl_dynamic_typesupport_dynamic_type_builder_impl_t * builder,
   rosidl_dynamic_typesupport_member_id_t id,
@@ -693,15 +795,10 @@ dtb_add_complex_unbounded_unsupported(
   rosidl_dynamic_typesupport_dynamic_type_impl_t * nested_struct)
 {
   (void)ss;
-  (void)builder;
   (void)id;
-  (void)name;
-  (void)name_length;
   (void)default_value;
   (void)default_value_length;
-  (void)nested_struct;
-  RCUTILS_SET_ERROR_MSG("sequences of nested structs are not supported");
-  return RCUTILS_RET_ERROR;
+  return add_struct_collection(builder, name, name_length, nested_struct, false, 0u);
 }
 
 // ===== Dynamic data ==========================================================
@@ -911,6 +1008,31 @@ dd_get_item_count(
     RCUTILS_SET_ERROR_MSG("invalid int2dds dynamic data");
     return RCUTILS_RET_ERROR;
   }
+  if (d->is_struct_collection) {
+    // Length of a struct sequence: probe "flat_name[i].<first leaf>" until out of range.
+    *item_count = 0;
+    if (!d->bytes || !d->obj || !d->elem_members) {
+      return RCUTILS_RET_OK;
+    }
+    const Member * probe = nullptr;
+    for (const auto & sm : *d->elem_members) {
+      if (sm.kind == MEMBER_LEAF) {probe = &sm; break;}
+    }
+    if (!probe) {
+      return RCUTILS_RET_OK;  // no direct leaf to probe (all-nested element)
+    }
+    size_t count = 0;
+    const size_t kMaxItems = 1u << 24;
+    while (count < kMaxItems) {
+      std::string p = d->flat_name + "[" + std::to_string(count) + "]." + probe->flat_name;
+      if (probe_path(d, p, probe->type_code) != INT2DDS_RET_OK) {
+        break;
+      }
+      ++count;
+    }
+    *item_count = count;
+    return RCUTILS_RET_OK;
+  }
   if (!d->is_collection) {
     *item_count = d->members ? d->members->size() : 0;
     return RCUTILS_RET_OK;
@@ -989,15 +1111,8 @@ dd_loan_value(
   (void)ss;
   (void)allocator;
   auto * d = data_of(data);
-  if (!d || d->is_collection || !d->members ||
-    static_cast<size_t>(id) >= d->members->size() || !loaned_dynamic_data)
-  {
+  if (!d || !loaned_dynamic_data) {
     RCUTILS_SET_ERROR_MSG("invalid int2dds dynamic data for loan");
-    return RCUTILS_RET_ERROR;
-  }
-  const Member & m = (*d->members)[id];
-  if (m.kind == MEMBER_LEAF) {
-    RCUTILS_SET_ERROR_MSG("loan_value supports only nested or collection members");
     return RCUTILS_RET_ERROR;
   }
   auto * child = new (std::nothrow) DataHandle();
@@ -1007,13 +1122,39 @@ dd_loan_value(
   }
   child->bytes = d->bytes;  // shared with the parent view
   child->obj = d->obj;
+
+  if (d->is_struct_collection) {
+    // Loaning element `id`: an element struct view with an indexed path prefix ("pts[id]").
+    child->members = d->elem_members;
+    child->path_prefix = d->flat_name + "[" + std::to_string(id) + "]";
+    loaned_dynamic_data->handle = child;
+    return RCUTILS_RET_OK;
+  }
+
+  if (d->is_collection || !d->members || static_cast<size_t>(id) >= d->members->size()) {
+    delete child;
+    RCUTILS_SET_ERROR_MSG("invalid int2dds dynamic data for loan");
+    return RCUTILS_RET_ERROR;
+  }
+  const Member & m = (*d->members)[id];
+  if (m.kind == MEMBER_LEAF) {
+    delete child;
+    RCUTILS_SET_ERROR_MSG("loan_value supports only nested or collection members");
+    return RCUTILS_RET_ERROR;
+  }
+  const std::string prefixed =
+    d->path_prefix.empty() ? m.flat_name : d->path_prefix + "." + m.flat_name;
   if (m.kind == MEMBER_COLLECTION) {
     child->is_collection = true;
     child->element_code = m.type_code;
-    child->flat_name = m.flat_name;
-  } else {  // MEMBER_NESTED
-    child->is_collection = false;
-    child->members = &m.sub;  // borrows the parent's member tree (stable for the loan)
+    child->flat_name = prefixed;
+  } else if (m.kind == MEMBER_STRUCT_COLLECTION) {
+    child->is_struct_collection = true;
+    child->elem_members = &m.sub;
+    child->flat_name = prefixed;
+  } else {  // MEMBER_NESTED (flattened; flat names are absolute)
+    child->members = &m.sub;
+    child->path_prefix = d->path_prefix;
   }
   loaned_dynamic_data->handle = child;
   return RCUTILS_RET_OK;
@@ -1110,14 +1251,14 @@ init_dynamic_serialization_support_interface(
   WIRE_COLLECTIONS(wstring)
 #undef WIRE_COLLECTIONS
 
-  // Nested struct members (flattened). Arrays/sequences of nested structs are rejected.
+  // Nested struct members (flattened); arrays/sequences of nested structs (registry-resolved).
   iface->dynamic_type_builder_add_complex_member = dtb_add_complex_member;
   iface->dynamic_type_builder_add_complex_member_builder = dtb_add_complex_member_builder;
-  iface->dynamic_type_builder_add_complex_array_member = dtb_add_complex_sized_unsupported;
+  iface->dynamic_type_builder_add_complex_array_member = dtb_add_complex_array_member;
   iface->dynamic_type_builder_add_complex_unbounded_sequence_member =
-    dtb_add_complex_unbounded_unsupported;
+    dtb_add_complex_unbounded_sequence_member;
   iface->dynamic_type_builder_add_complex_bounded_sequence_member =
-    dtb_add_complex_sized_unsupported;
+    dtb_add_complex_bounded_sequence_member;
 
   iface->dynamic_data_init_from_dynamic_type = dd_init_from_type;
   iface->dynamic_data_fini = dd_fini;

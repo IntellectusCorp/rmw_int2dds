@@ -329,10 +329,11 @@ take_publisher_event(
 #ifdef RMW_INT2DDS_HAS_MATCHED_EVENT
     case RMW_EVENT_PUBLICATION_MATCHED: {
         auto * status = static_cast<rmw_matched_status_t *>(event_info);
-        int32_t total_count = 0;
-        int32_t current_count = 0;
-        Int2DdsRet ret = int2dds_get_publication_matched_status(
-        pub_data->datawriter, &total_count, &current_count);
+        Int2DdsPublicationMatchedStatus matched_status = {};
+        Int2DdsRet ret = int2dds_datawriter_get_publication_matched_status(
+        pub_data->datawriter, &matched_status);
+        const int32_t total_count = matched_status.total_count;
+        const int32_t current_count = matched_status.current_count;
         if (ret != INT2DDS_RET_OK) {
           RMW_SET_ERROR_MSG("failed to get publication matched status");
           return RMW_RET_ERROR;
@@ -461,10 +462,11 @@ take_subscription_event(
 #ifdef RMW_INT2DDS_HAS_MATCHED_EVENT
     case RMW_EVENT_SUBSCRIPTION_MATCHED: {
         auto * status = static_cast<rmw_matched_status_t *>(event_info);
-        int32_t total_count = 0;
-        int32_t current_count = 0;
-        Int2DdsRet ret = int2dds_get_subscription_matched_status(
-        sub_data->datareader, &total_count, &current_count);
+        Int2DdsSubscriptionMatchedStatus matched_status = {};
+        Int2DdsRet ret = int2dds_datareader_get_subscription_matched_status(
+        sub_data->datareader, &matched_status);
+        const int32_t total_count = matched_status.total_count;
+        const int32_t current_count = matched_status.current_count;
         if (ret != INT2DDS_RET_OK) {
           RMW_SET_ERROR_MSG("failed to get subscription matched status");
           return RMW_RET_ERROR;
@@ -707,12 +709,11 @@ rmw_event_set_callback(
       if (callback != nullptr && pub_data->datawriter != nullptr) {
         // Reconstruct matches that occurred while no listener was active
         // (the listener mask is only enabled while a callback is registered).
-        int32_t total_count = 0;
-        int32_t current_count = 0;
-        if (INT2DDS_RET_OK == int2dds_get_publication_matched_status(
-            pub_data->datawriter, &total_count, &current_count) &&
-          static_cast<size_t>(total_count) > pub_data->matched_total_seen)
-        {
+        Int2DdsPublicationMatchedStatus matched_status = {};
+        const int32_t total_count =
+          (INT2DDS_RET_OK == int2dds_datawriter_get_publication_matched_status(
+            pub_data->datawriter, &matched_status)) ? matched_status.total_count : 0;
+        if (static_cast<size_t>(total_count) > pub_data->matched_total_seen) {
           pub_data->matched_unread +=
             static_cast<size_t>(total_count) - pub_data->matched_total_seen;
           pub_data->matched_total_seen = static_cast<size_t>(total_count);
@@ -735,12 +736,11 @@ rmw_event_set_callback(
       sub_data->matched_user_data = user_data;
       if (callback != nullptr && sub_data->datareader != nullptr) {
         // See the publisher branch: reconstruct the pre-registration backlog.
-        int32_t total_count = 0;
-        int32_t current_count = 0;
-        if (INT2DDS_RET_OK == int2dds_get_subscription_matched_status(
-            sub_data->datareader, &total_count, &current_count) &&
-          static_cast<size_t>(total_count) > sub_data->matched_total_seen)
-        {
+        Int2DdsSubscriptionMatchedStatus matched_status = {};
+        const int32_t total_count =
+          (INT2DDS_RET_OK == int2dds_datareader_get_subscription_matched_status(
+            sub_data->datareader, &matched_status)) ? matched_status.total_count : 0;
+        if (static_cast<size_t>(total_count) > sub_data->matched_total_seen) {
           sub_data->matched_unread +=
             static_cast<size_t>(total_count) - sub_data->matched_total_seen;
           sub_data->matched_total_seen = static_cast<size_t>(total_count);

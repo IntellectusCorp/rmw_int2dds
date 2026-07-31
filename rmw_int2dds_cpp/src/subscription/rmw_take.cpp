@@ -57,7 +57,7 @@ struct SerializedLoanGuard
   ~SerializedLoanGuard()
   {
     if (loan != nullptr) {
-      (void)int2dds_return_serialized_loan(loan);
+      (void)int2dds_datareader_return_serialized_loan(loan);
     }
   }
 
@@ -264,7 +264,7 @@ take_message_internal(
     serialized_data = sub_data->take_buffer.data();
     have_sample_info = ret == INT2DDS_RET_OK;
   } else {
-    ret = int2dds_take_serialized_loaned(
+    ret = int2dds_datareader_take_serialized_loaned(
       sub_data->datareader,
       &serialized_data,
       &data_size,
@@ -562,7 +562,7 @@ rmw_take_sequence(
   }
 
   Int2DdsSampleSeq * seq = nullptr;
-  Int2DdsRet ret = int2dds_take_serialized_batch(
+  Int2DdsRet ret = int2dds_datareader_take_serialized_batch(
     sub_data->datareader, static_cast<int32_t>(count), &seq);
   if (ret == INT2DDS_RET_NO_DATA || seq == nullptr) {
     if (seq != nullptr) {
