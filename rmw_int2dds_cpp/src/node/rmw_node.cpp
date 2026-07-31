@@ -505,7 +505,7 @@ rmw_node_get_graph_guard_condition(const rmw_node_t * node)
   graph_guard_condition->context = node->context;
 
   node_data->graph_guard_condition = graph_guard_condition;
-  (void)int2dds_guard_condition_set_trigger_value(gc_data->guard_condition, true);
+  (void)int2dds_guardcondition_set_trigger_value(gc_data->guard_condition, true);
   return node_data->graph_guard_condition;
 }
 

@@ -633,6 +633,8 @@ create_subscription_reader(
       context_data->default_subscriber,
       sub_data->topic,
       reader_qos,
+      nullptr,
+      0,
       &sub_data->datareader);
   } else {
     std::vector<const char *> parameter_ptrs;
@@ -655,6 +657,8 @@ create_subscription_reader(
         context_data->default_subscriber,
         sub_data->content_filtered_topic,
         reader_qos,
+        nullptr,
+        0,
         &sub_data->datareader);
       if (dds_ret != INT2DDS_RET_OK && sub_data->content_filtered_topic != nullptr) {
         int2dds_delete_contentfilteredtopic(sub_data->content_filtered_topic);
@@ -849,7 +853,6 @@ rmw_create_subscription(
         dds_topic_name.c_str(),
         dds_type_name.c_str(),
         rmw_int2dds_cpp::INT2DDS_EXTENSIBILITY_MUTABLE,
-        descriptors.has_key,
         nullptr,
         descriptors.name_ptrs.data(),
         descriptors.types.data(),
@@ -1032,10 +1035,10 @@ rmw_subscription_count_matched_publishers(
     return RMW_RET_ERROR;
   }
 
-  int32_t total_count = 0;
-  int32_t current_count = 0;
-  Int2DdsRet ret = int2dds_get_subscription_matched_status(
-    sub_data->datareader, &total_count, &current_count);
+  Int2DdsSubscriptionMatchedStatus matched_status = {};
+  Int2DdsRet ret = int2dds_datareader_get_subscription_matched_status(
+    sub_data->datareader, &matched_status);
+  const int32_t current_count = matched_status.current_count;
   if (ret != INT2DDS_RET_OK) {
     RMW_SET_ERROR_MSG("failed to get subscription matched status");
     return RMW_RET_ERROR;
