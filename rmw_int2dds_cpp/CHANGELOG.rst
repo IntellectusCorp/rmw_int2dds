@@ -17,6 +17,14 @@ Forthcoming
 * Batch ``take_sequence`` into a single serialized take.
 * Move development test executables into ``test/``; align QUALITY_DECLARATION
   and README test status with the current state.
+* Decide ``rmw_wait`` readiness before attaching to the wait set, so a call that
+  finds work already pending skips the attach/wait/detach round trip. Guard
+  conditions join the pre-wait scan through a non-destructive peek, and a
+  zero-timeout poll no longer attaches at all. Saturated single-subscription
+  throughput roughly doubles.
+* Add ``test_rmw_wait_guards``, the first automated test registered with CTest:
+  guard condition readiness, trigger consumption, timeout handling and wake-up
+  from another thread, all without a DDS participant.
 * Contributors: Intellectus Corp.
 
 0.0.1 (2026-06-25)
