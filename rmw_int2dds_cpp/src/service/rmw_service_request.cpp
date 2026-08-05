@@ -267,9 +267,7 @@ rmw_send_response(
   Int2DdsRet ret = int2dds_datawriter_write_serialized(
     srv_data->response_writer,
     send_buffer.data(),
-    send_buffer.size(),
-    nullptr,
-    0);
+    send_buffer.size());
 
   if (ret != INT2DDS_RET_OK) {
     RMW_SET_ERROR_MSG("failed to send response");
