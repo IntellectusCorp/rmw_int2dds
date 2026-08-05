@@ -16,9 +16,12 @@
 #include "rmw/allocators.h"
 #include "rmw/error_handling.h"
 
+#include <mutex>
+
 #include "int2dds-ffi.h"  // NOLINT(build/include_subdir): vendored FFI header
 #include "rmw_int2dds_cpp/identifier.hpp"
 #include "rmw_int2dds_cpp/types.hpp"
+#include "waitset_registry.hpp"  // NOLINT(build/include_subdir)
 
 extern "C"
 {
@@ -61,6 +64,8 @@ rmw_create_wait_set(rmw_context_t * context, size_t max_conditions)
   wait_set->implementation_identifier = rmw_int2dds_cpp::implementation_identifier;
   wait_set->data = ws_data;
 
+  rmw_int2dds_cpp::waitset_registry_add(ws_data);
+
   return wait_set;
 }
 
@@ -77,6 +82,14 @@ rmw_destroy_wait_set(rmw_wait_set_t * wait_set)
 
   auto * ws_data = static_cast<rmw_int2dds_cpp::WaitSetData *>(wait_set->data);
   if (ws_data != nullptr) {
+    rmw_int2dds_cpp::waitset_registry_remove(ws_data);
+
+    // Detach leftovers so the conditions do not keep notifying a dead waitset.
+    {
+      std::lock_guard<std::mutex> lock(ws_data->lock);
+      rmw_int2dds_cpp::waitset_detach_all(ws_data);
+    }
+
     if (ws_data->waitset != nullptr) {
       int2dds_waitset_delete(ws_data->waitset);
     }

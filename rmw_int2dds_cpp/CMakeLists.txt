@@ -108,6 +108,7 @@ add_library(rmw_int2dds_cpp SHARED
   # Wait set
   src/wait/rmw_wait.cpp
   src/wait/rmw_wait_set.cpp
+  src/wait/waitset_registry.cpp
 
   # Service
   src/service/rmw_service.cpp

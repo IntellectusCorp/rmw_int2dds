@@ -248,16 +248,34 @@ struct GuardConditionData
 };
 
 /// Wait set implementation data
+// Identity of an event cached by a wait set: the entity data pointer plus the
+// event type, since rmw_event_t wrappers are not stable across rmw_wait calls.
+struct WaitSetCachedEvent
+{
+  void * entity_data{nullptr};
+  rmw_event_type_t event_type{RMW_EVENT_INVALID};
+};
+
 struct WaitSetData
 {
   Int2DdsWaitSet * waitset{nullptr};
 
-  // Tracking attached entities
-  std::vector<rmw_subscription_t *> attached_subscriptions;
-  std::vector<rmw_guard_condition_t *> attached_guard_conditions;
-  std::vector<rmw_service_t *> attached_services;
-  std::vector<rmw_client_t *> attached_clients;
-  std::vector<rmw_event_t *> attached_events;
+  // Guards the cached/attached state below against entity-destroy cache cleaning.
+  std::mutex lock;
+  bool inuse{false};
+
+  // Entity data pointers from the previous rmw_wait call. When the incoming
+  // arrays are identical, the conditions attached last time are still attached
+  // and the whole attach/detach cycle is skipped.
+  std::vector<void *> cached_subscriptions;
+  std::vector<void *> cached_guard_conditions;
+  std::vector<void *> cached_services;
+  std::vector<void *> cached_clients;
+  std::vector<WaitSetCachedEvent> cached_events;
+
+  // Conditions currently attached to the core waitset, kept for detaching.
+  std::vector<Int2DdsStatusCondition *> attached_conditions;
+  std::vector<Int2DdsGuardCondition *> attached_guards;
 };
 
 /// Service implementation data

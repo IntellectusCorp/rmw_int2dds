@@ -32,6 +32,7 @@
 #include "int2dds-ffi.h"  // NOLINT(build/include_subdir): vendored FFI header
 #include "rmw_int2dds_cpp/identifier.hpp"
 #include "rmw_int2dds_cpp/types.hpp"
+#include "waitset_registry.hpp"  // NOLINT(build/include_subdir)
 
 namespace
 {
@@ -478,26 +479,65 @@ any_entity_ready(
 
 /// Attach every entity handed to rmw_wait to the wait set
 ///
-/// Records what was attached so the caller can detach exactly that set. This
-/// runs only when rmw_wait is about to block: the status condition masks it
+/// True when the incoming entity array differs from the one cached on the
+/// previous rmw_wait call, meaning the waitset attachments must be rebuilt.
+bool
+require_reattach(const std::vector<void *> & cached, size_t count, void ** ary)
+{
+  if (ary == nullptr || count == 0) {
+    return !cached.empty();
+  }
+
+  if (count != cached.size()) {
+    return true;
+  }
+
+  return std::memcmp(cached.data(), ary, count * sizeof(void *)) != 0;
+}
+
+bool
+require_reattach_events(
+  const std::vector<rmw_int2dds_cpp::WaitSetCachedEvent> & cached, const rmw_events_t * events)
+{
+  const size_t count = events != nullptr ? events->event_count : 0;
+
+  if (count != cached.size()) {
+    return true;
+  }
+
+  for (size_t i = 0; i < count; ++i) {
+    auto * event = static_cast<rmw_event_t *>(events->events[i]);
+    if (event == nullptr || cached[i].entity_data != event->data ||
+      cached[i].event_type != event->event_type)
+    {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+/// Attach every entity handed to rmw_wait to the wait set
+///
+/// Records what was attached and the incoming entity arrays on ws_data, so the
+/// attachments persist across calls and are rebuilt only when the set changes.
+/// This runs only when rmw_wait is about to block: the status condition masks it
 /// widens must be in place before int2dds_waitset_wait_ex_ns is called, because
 /// int2dds_statuscondition_set_enabled_statuses neither re-evaluates nor wakes
 /// an already blocked wait set.
 void
 attach_entities(
-  Int2DdsWaitSet * waitset,
+  rmw_int2dds_cpp::WaitSetData * ws_data,
   rmw_subscriptions_t * subscriptions,
   rmw_guard_conditions_t * guard_conditions,
   rmw_services_t * services,
   rmw_clients_t * clients,
-  rmw_events_t * events,
-  std::vector<Int2DdsStatusCondition *> & attached_reader_conditions,
-  std::vector<Int2DdsGuardCondition *> & attached_guards,
-  std::vector<Int2DdsStatusCondition *> & attached_event_conditions)
+  rmw_events_t * events)
 {
   // Attach subscriptions
   if (subscriptions != nullptr) {
     for (size_t i = 0; i < subscriptions->subscriber_count; ++i) {
+      ws_data->cached_subscriptions.push_back(subscriptions->subscribers[i]);
       if (subscriptions->subscribers[i] != nullptr) {
         auto * sub_data =
           static_cast<rmw_int2dds_cpp::SubscriptionData *>(subscriptions->subscribers[i]);
@@ -505,10 +545,11 @@ attach_entities(
           bool ready = ensure_status_condition_mask(
             sub_data->datareader, &sub_data->status_condition, INT2DDS_STATUS_DATA_AVAILABLE);
           Int2DdsRet ret = ready && sub_data->status_condition != nullptr ?
-            int2dds_waitset_attach_statuscondition(waitset, sub_data->status_condition) :
+            int2dds_waitset_attach_statuscondition(
+            ws_data->waitset, sub_data->status_condition) :
             INT2DDS_RET_ERROR;
           if (ret == INT2DDS_RET_OK) {
-            attached_reader_conditions.push_back(sub_data->status_condition);
+            ws_data->attached_conditions.push_back(sub_data->status_condition);
           }
         }
       }
@@ -518,14 +559,15 @@ attach_entities(
   // Attach guard conditions
   if (guard_conditions != nullptr) {
     for (size_t i = 0; i < guard_conditions->guard_condition_count; ++i) {
+      ws_data->cached_guard_conditions.push_back(guard_conditions->guard_conditions[i]);
       if (guard_conditions->guard_conditions[i] != nullptr) {
         auto * gc_data =
           static_cast<rmw_int2dds_cpp::GuardConditionData *>(guard_conditions->guard_conditions[i]);
         if (gc_data != nullptr && gc_data->guard_condition != nullptr) {
           Int2DdsRet ret = int2dds_waitset_attach_guardcondition(
-            waitset, gc_data->guard_condition);
+            ws_data->waitset, gc_data->guard_condition);
           if (ret == INT2DDS_RET_OK) {
-            attached_guards.push_back(gc_data->guard_condition);
+            ws_data->attached_guards.push_back(gc_data->guard_condition);
           }
         }
       }
@@ -535,6 +577,7 @@ attach_entities(
   // Attach services (request readers)
   if (services != nullptr) {
     for (size_t i = 0; i < services->service_count; ++i) {
+      ws_data->cached_services.push_back(services->services[i]);
       if (services->services[i] != nullptr) {
         auto * srv_data = static_cast<rmw_int2dds_cpp::ServiceData *>(services->services[i]);
         if (srv_data != nullptr && srv_data->request_reader != nullptr) {
@@ -543,10 +586,11 @@ attach_entities(
             &srv_data->request_status_condition,
             INT2DDS_STATUS_DATA_AVAILABLE);
           Int2DdsRet ret = ready && srv_data->request_status_condition != nullptr ?
-            int2dds_waitset_attach_statuscondition(waitset, srv_data->request_status_condition) :
+            int2dds_waitset_attach_statuscondition(
+            ws_data->waitset, srv_data->request_status_condition) :
             INT2DDS_RET_ERROR;
           if (ret == INT2DDS_RET_OK) {
-            attached_reader_conditions.push_back(srv_data->request_status_condition);
+            ws_data->attached_conditions.push_back(srv_data->request_status_condition);
           }
         }
       }
@@ -556,6 +600,7 @@ attach_entities(
   // Attach clients (response readers)
   if (clients != nullptr) {
     for (size_t i = 0; i < clients->client_count; ++i) {
+      ws_data->cached_clients.push_back(clients->clients[i]);
       if (clients->clients[i] != nullptr) {
         auto * cli_data = static_cast<rmw_int2dds_cpp::ClientData *>(clients->clients[i]);
         if (cli_data != nullptr && cli_data->response_reader != nullptr) {
@@ -564,10 +609,11 @@ attach_entities(
             &cli_data->response_status_condition,
             INT2DDS_STATUS_DATA_AVAILABLE);
           Int2DdsRet ret = ready && cli_data->response_status_condition != nullptr ?
-            int2dds_waitset_attach_statuscondition(waitset, cli_data->response_status_condition) :
+            int2dds_waitset_attach_statuscondition(
+            ws_data->waitset, cli_data->response_status_condition) :
             INT2DDS_RET_ERROR;
           if (ret == INT2DDS_RET_OK) {
-            attached_reader_conditions.push_back(cli_data->response_status_condition);
+            ws_data->attached_conditions.push_back(cli_data->response_status_condition);
           }
         }
       }
@@ -577,18 +623,27 @@ attach_entities(
   // Attach events (status conditions)
   if (events != nullptr) {
     for (size_t i = 0; i < events->event_count; ++i) {
-      if (events->events[i] != nullptr) {
-        auto * event = static_cast<rmw_event_t *>(events->events[i]);
-        if (event->implementation_identifier != rmw_int2dds_cpp::implementation_identifier) {
-          continue;
-        }
-        auto * event_data = static_cast<rmw_int2dds_cpp::EventData *>(event->data);
-        Int2DdsStatusCondition * status_condition = refresh_event_status_condition(event_data);
-        if (status_condition != nullptr) {
-          Int2DdsRet ret = int2dds_waitset_attach_statuscondition(waitset, status_condition);
-          if (ret == INT2DDS_RET_OK) {
-            attached_event_conditions.push_back(status_condition);
-          }
+      auto * event = static_cast<rmw_event_t *>(events->events[i]);
+
+      rmw_int2dds_cpp::WaitSetCachedEvent cached_event;
+      if (event != nullptr) {
+        cached_event.entity_data = event->data;
+        cached_event.event_type = event->event_type;
+      }
+      ws_data->cached_events.push_back(cached_event);
+
+      if (event == nullptr ||
+        event->implementation_identifier != rmw_int2dds_cpp::implementation_identifier)
+      {
+        continue;
+      }
+      auto * event_data = static_cast<rmw_int2dds_cpp::EventData *>(event->data);
+      Int2DdsStatusCondition * status_condition = refresh_event_status_condition(event_data);
+      if (status_condition != nullptr) {
+        Int2DdsRet ret = int2dds_waitset_attach_statuscondition(
+          ws_data->waitset, status_condition);
+        if (ret == INT2DDS_RET_OK) {
+          ws_data->attached_conditions.push_back(status_condition);
         }
       }
     }
@@ -630,6 +685,27 @@ rmw_wait(
     return RMW_RET_ERROR;
   }
 
+  // Exclusive use of the wait set: blocks entity-destroy cache cleaning and
+  // rejects concurrent rmw_wait, which the rmw contract does not allow.
+  {
+    std::lock_guard<std::mutex> lock(ws_data->lock);
+    if (ws_data->inuse) {
+      RMW_SET_ERROR_MSG("concurrent calls to rmw_wait on a single wait set are not supported");
+      return RMW_RET_ERROR;
+    }
+    ws_data->inuse = true;
+  }
+
+  struct InUseGuard
+  {
+    rmw_int2dds_cpp::WaitSetData * ws_data;
+    ~InUseGuard()
+    {
+      std::lock_guard<std::mutex> lock(ws_data->lock);
+      ws_data->inuse = false;
+    }
+  } inuse_guard{ws_data};
+
   // Convert timeout
   const int64_t timeout_ns = convert_timeout_to_ns(wait_timeout);
 
@@ -653,15 +729,32 @@ rmw_wait(
       // report, so a zero timeout wait cannot observe anything it missed.
       wait_ret = INT2DDS_RET_TIMEOUT;
     } else {
-      // Track attached entities for cleanup
-      std::vector<Int2DdsStatusCondition *> attached_reader_conditions;
-      std::vector<Int2DdsGuardCondition *> attached_guards;
-      std::vector<Int2DdsStatusCondition *> attached_event_conditions;
-
+      // The executor passes the same entity set on almost every call. Rebuild
+      // the attachments only when the set changed since the previous call;
+      // otherwise the conditions attached last time are still in place.
       const auto attach_t0 = std::chrono::steady_clock::now();
-      attach_entities(
-        ws_data->waitset, subscriptions, guard_conditions, services, clients, events,
-        attached_reader_conditions, attached_guards, attached_event_conditions);
+      if (
+        require_reattach(
+          ws_data->cached_subscriptions,
+          subscriptions != nullptr ? subscriptions->subscriber_count : 0,
+          subscriptions != nullptr ? subscriptions->subscribers : nullptr) ||
+        require_reattach(
+          ws_data->cached_guard_conditions,
+          guard_conditions != nullptr ? guard_conditions->guard_condition_count : 0,
+          guard_conditions != nullptr ? guard_conditions->guard_conditions : nullptr) ||
+        require_reattach(
+          ws_data->cached_services,
+          services != nullptr ? services->service_count : 0,
+          services != nullptr ? services->services : nullptr) ||
+        require_reattach(
+          ws_data->cached_clients,
+          clients != nullptr ? clients->client_count : 0,
+          clients != nullptr ? clients->clients : nullptr) ||
+        require_reattach_events(ws_data->cached_events, events))
+      {
+        rmw_int2dds_cpp::waitset_detach_all(ws_data);
+        attach_entities(ws_data, subscriptions, guard_conditions, services, clients, events);
+      }
       if (profile) {
         attach_elapsed_us = elapsed_us(attach_t0, std::chrono::steady_clock::now());
       }
@@ -678,20 +771,8 @@ rmw_wait(
         wait_elapsed_us = elapsed_us(wait_t0, std::chrono::steady_clock::now());
       }
 
-      // Detach all entities (cleanup)
-      const auto detach_t0 = std::chrono::steady_clock::now();
-      for (auto * condition : attached_reader_conditions) {
-        int2dds_waitset_detach_statuscondition(ws_data->waitset, condition);
-      }
-      for (auto * guard : attached_guards) {
-        int2dds_waitset_detach_guardcondition(ws_data->waitset, guard);
-      }
-      for (auto * condition : attached_event_conditions) {
-        int2dds_waitset_detach_statuscondition(ws_data->waitset, condition);
-      }
-      if (profile) {
-        detach_elapsed_us = elapsed_us(detach_t0, std::chrono::steady_clock::now());
-      }
+      // Attachments stay in place for the next call; they are only rebuilt
+      // when the entity set changes or an entity is destroyed.
     }
   }
 
