@@ -382,6 +382,10 @@ refresh_event_status_condition(rmw_int2dds_cpp::EventData * event_data)
     return nullptr;
   }
 
+  if ((enabled_mask & status_mask) == status_mask) {
+    return status_condition;
+  }
+
   if (
     int2dds_statuscondition_set_enabled_statuses(
       status_condition, enabled_mask | status_mask) != INT2DDS_RET_OK)
