@@ -18,10 +18,12 @@
 #include <array>
 #include <atomic>
 #include <cstddef>
+#include <cstdint>
 #include <map>
 #include <memory>
 #include <mutex>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include "rmw/event.h"
@@ -266,9 +268,11 @@ struct WaitSetData
   std::vector<void *> cached_clients;
   std::vector<WaitSetCachedEvent> cached_events;
 
-  // Conditions currently attached to the core waitset, kept for detaching.
-  std::vector<Int2DdsStatusCondition *> attached_conditions;
-  std::vector<Int2DdsGuardCondition *> attached_guards;
+  // Attached conditions, each stamped with the attach_generation that last
+  // wanted it. A rebuild detaches whatever keeps an older stamp.
+  uint64_t attach_generation{0};
+  std::unordered_map<Int2DdsStatusCondition *, uint64_t> attached_conditions;
+  std::unordered_map<Int2DdsGuardCondition *, uint64_t> attached_guards;
 };
 
 /// Service implementation data
