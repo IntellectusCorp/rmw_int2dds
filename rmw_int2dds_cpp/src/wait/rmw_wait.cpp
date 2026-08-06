@@ -517,16 +517,72 @@ require_reattach_events(
   return false;
 }
 
-/// Attach every entity handed to rmw_wait to the wait set
-///
-/// Records what was attached and the incoming entity arrays on ws_data, so the
-/// attachments persist across calls and are rebuilt only when the set changes.
-/// This runs only when rmw_wait is about to block: the status condition masks it
-/// widens must be in place before int2dds_waitset_wait_ex_ns is called, because
-/// int2dds_statuscondition_set_enabled_statuses neither re-evaluates nor wakes
-/// an already blocked wait set.
+// Attach the condition if new, then stamp it with the current generation so
+// detach_stale_attachments keeps it.
 void
-attach_entities(
+ensure_condition_attached(
+  rmw_int2dds_cpp::WaitSetData * ws_data, Int2DdsStatusCondition * condition)
+{
+  auto it = ws_data->attached_conditions.find(condition);
+  if (it != ws_data->attached_conditions.end()) {
+    it->second = ws_data->attach_generation;
+    return;
+  }
+
+  if (int2dds_waitset_attach_statuscondition(ws_data->waitset, condition) == INT2DDS_RET_OK) {
+    ws_data->attached_conditions.emplace(condition, ws_data->attach_generation);
+  }
+}
+
+// ensure_condition_attached for a guard condition.
+void
+ensure_guard_attached(
+  rmw_int2dds_cpp::WaitSetData * ws_data, Int2DdsGuardCondition * guard)
+{
+  auto it = ws_data->attached_guards.find(guard);
+  if (it != ws_data->attached_guards.end()) {
+    it->second = ws_data->attach_generation;
+    return;
+  }
+
+  if (int2dds_waitset_attach_guardcondition(ws_data->waitset, guard) == INT2DDS_RET_OK) {
+    ws_data->attached_guards.emplace(guard, ws_data->attach_generation);
+  }
+}
+
+// Detach conditions left with an older generation, the leftovers from entities
+// dropped since the last rebuild.
+void
+detach_stale_attachments(rmw_int2dds_cpp::WaitSetData * ws_data)
+{
+  const uint64_t generation = ws_data->attach_generation;
+
+  for (auto it = ws_data->attached_conditions.begin();
+    it != ws_data->attached_conditions.end(); )
+  {
+    if (it->second != generation) {
+      int2dds_waitset_detach_statuscondition(ws_data->waitset, it->first);
+      it = ws_data->attached_conditions.erase(it);
+    } else {
+      ++it;
+    }
+  }
+
+  for (auto it = ws_data->attached_guards.begin(); it != ws_data->attached_guards.end(); ) {
+    if (it->second != generation) {
+      int2dds_waitset_detach_guardcondition(ws_data->waitset, it->first);
+      it = ws_data->attached_guards.erase(it);
+    } else {
+      ++it;
+    }
+  }
+}
+
+// Attach new conditions, re-stamp existing ones, and record the incoming arrays
+// for the next identity check. Widening a mask here must precede the wait, since
+// int2dds_statuscondition_set_enabled_statuses does not wake a blocked wait set.
+void
+stamp_desired_attachments(
   rmw_int2dds_cpp::WaitSetData * ws_data,
   rmw_subscriptions_t * subscriptions,
   rmw_guard_conditions_t * guard_conditions,
@@ -534,6 +590,12 @@ attach_entities(
   rmw_clients_t * clients,
   rmw_events_t * events)
 {
+  ws_data->cached_subscriptions.clear();
+  ws_data->cached_guard_conditions.clear();
+  ws_data->cached_services.clear();
+  ws_data->cached_clients.clear();
+  ws_data->cached_events.clear();
+
   // Attach subscriptions
   if (subscriptions != nullptr) {
     for (size_t i = 0; i < subscriptions->subscriber_count; ++i) {
@@ -544,12 +606,8 @@ attach_entities(
         if (sub_data != nullptr && sub_data->datareader != nullptr) {
           bool ready = ensure_status_condition_mask(
             sub_data->datareader, &sub_data->status_condition, INT2DDS_STATUS_DATA_AVAILABLE);
-          Int2DdsRet ret = ready && sub_data->status_condition != nullptr ?
-            int2dds_waitset_attach_statuscondition(
-            ws_data->waitset, sub_data->status_condition) :
-            INT2DDS_RET_ERROR;
-          if (ret == INT2DDS_RET_OK) {
-            ws_data->attached_conditions.push_back(sub_data->status_condition);
+          if (ready && sub_data->status_condition != nullptr) {
+            ensure_condition_attached(ws_data, sub_data->status_condition);
           }
         }
       }
@@ -564,11 +622,7 @@ attach_entities(
         auto * gc_data =
           static_cast<rmw_int2dds_cpp::GuardConditionData *>(guard_conditions->guard_conditions[i]);
         if (gc_data != nullptr && gc_data->guard_condition != nullptr) {
-          Int2DdsRet ret = int2dds_waitset_attach_guardcondition(
-            ws_data->waitset, gc_data->guard_condition);
-          if (ret == INT2DDS_RET_OK) {
-            ws_data->attached_guards.push_back(gc_data->guard_condition);
-          }
+          ensure_guard_attached(ws_data, gc_data->guard_condition);
         }
       }
     }
@@ -585,12 +639,8 @@ attach_entities(
             srv_data->request_reader,
             &srv_data->request_status_condition,
             INT2DDS_STATUS_DATA_AVAILABLE);
-          Int2DdsRet ret = ready && srv_data->request_status_condition != nullptr ?
-            int2dds_waitset_attach_statuscondition(
-            ws_data->waitset, srv_data->request_status_condition) :
-            INT2DDS_RET_ERROR;
-          if (ret == INT2DDS_RET_OK) {
-            ws_data->attached_conditions.push_back(srv_data->request_status_condition);
+          if (ready && srv_data->request_status_condition != nullptr) {
+            ensure_condition_attached(ws_data, srv_data->request_status_condition);
           }
         }
       }
@@ -608,12 +658,8 @@ attach_entities(
             cli_data->response_reader,
             &cli_data->response_status_condition,
             INT2DDS_STATUS_DATA_AVAILABLE);
-          Int2DdsRet ret = ready && cli_data->response_status_condition != nullptr ?
-            int2dds_waitset_attach_statuscondition(
-            ws_data->waitset, cli_data->response_status_condition) :
-            INT2DDS_RET_ERROR;
-          if (ret == INT2DDS_RET_OK) {
-            ws_data->attached_conditions.push_back(cli_data->response_status_condition);
+          if (ready && cli_data->response_status_condition != nullptr) {
+            ensure_condition_attached(ws_data, cli_data->response_status_condition);
           }
         }
       }
@@ -640,11 +686,7 @@ attach_entities(
       auto * event_data = static_cast<rmw_int2dds_cpp::EventData *>(event->data);
       Int2DdsStatusCondition * status_condition = refresh_event_status_condition(event_data);
       if (status_condition != nullptr) {
-        Int2DdsRet ret = int2dds_waitset_attach_statuscondition(
-          ws_data->waitset, status_condition);
-        if (ret == INT2DDS_RET_OK) {
-          ws_data->attached_conditions.push_back(status_condition);
-        }
+        ensure_condition_attached(ws_data, status_condition);
       }
     }
   }
@@ -730,8 +772,8 @@ rmw_wait(
       wait_ret = INT2DDS_RET_TIMEOUT;
     } else {
       // The executor passes the same entity set on almost every call. Rebuild
-      // the attachments only when the set changed since the previous call;
-      // otherwise the conditions attached last time are still in place.
+      // the attachments only when the set changed since the previous call.
+      // Otherwise the conditions attached last time are still in place.
       const auto attach_t0 = std::chrono::steady_clock::now();
       if (
         require_reattach(
@@ -752,8 +794,10 @@ rmw_wait(
           clients != nullptr ? clients->clients : nullptr) ||
         require_reattach_events(ws_data->cached_events, events))
       {
-        rmw_int2dds_cpp::waitset_detach_all(ws_data);
-        attach_entities(ws_data, subscriptions, guard_conditions, services, clients, events);
+        ++ws_data->attach_generation;
+        stamp_desired_attachments(
+          ws_data, subscriptions, guard_conditions, services, clients, events);
+        detach_stale_attachments(ws_data);
       }
       if (profile) {
         attach_elapsed_us = elapsed_us(attach_t0, std::chrono::steady_clock::now());

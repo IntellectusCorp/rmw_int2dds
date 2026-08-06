@@ -59,11 +59,11 @@ waitset_registry_clean_caches()
 void
 waitset_detach_all(WaitSetData * ws_data)
 {
-  for (auto * condition : ws_data->attached_conditions) {
-    int2dds_waitset_detach_statuscondition(ws_data->waitset, condition);
+  for (const auto & entry : ws_data->attached_conditions) {
+    int2dds_waitset_detach_statuscondition(ws_data->waitset, entry.first);
   }
-  for (auto * guard : ws_data->attached_guards) {
-    int2dds_waitset_detach_guardcondition(ws_data->waitset, guard);
+  for (const auto & entry : ws_data->attached_guards) {
+    int2dds_waitset_detach_guardcondition(ws_data->waitset, entry.first);
   }
   ws_data->attached_conditions.clear();
   ws_data->attached_guards.clear();
