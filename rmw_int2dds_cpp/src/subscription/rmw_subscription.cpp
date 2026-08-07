@@ -596,8 +596,8 @@ destroy_subscription_reader_entities(
     return;
   }
 
+  rmw_int2dds_cpp::waitset_registry_clean_caches();
   if (sub_data->status_condition != nullptr) {
-    rmw_int2dds_cpp::waitset_registry_clean_caches();
     int2dds_statuscondition_delete(sub_data->status_condition);
     sub_data->status_condition = nullptr;
   }

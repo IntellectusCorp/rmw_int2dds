@@ -673,8 +673,8 @@ rmw_destroy_publisher(rmw_node_t * node, rmw_publisher_t * publisher)
   }
 
   // Delete DDS entities
+  rmw_int2dds_cpp::waitset_registry_clean_caches();
   if (pub_data->status_condition != nullptr) {
-    rmw_int2dds_cpp::waitset_registry_clean_caches();
     int2dds_statuscondition_delete(pub_data->status_condition);
     pub_data->status_condition = nullptr;
   }
