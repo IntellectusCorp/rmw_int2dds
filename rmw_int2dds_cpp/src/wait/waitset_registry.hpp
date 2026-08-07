@@ -23,9 +23,13 @@ namespace rmw_int2dds_cpp
 void waitset_registry_add(WaitSetData * ws_data);
 void waitset_registry_remove(WaitSetData * ws_data);
 
-// Detaches every cached condition from every registered wait set that is not
-// currently inside rmw_wait. Entity destroy paths call this before deleting a
-// condition handle, so no wait set is left holding a dangling handle.
+// Detaches every cached condition from every registered wait set. Waits out
+// the short sections where rmw_wait is reading or rebuilding a cache; a wait
+// set blocked in the FFI wait is skipped, which is safe because its
+// attachments then mirror the current entity set, which cannot contain an
+// entity being destroyed. Entity destroy paths call this before freeing
+// anything a wait set caches - condition handles as well as the entity data
+// pointers the cache keys on - so no dangling entry survives a destroy.
 void waitset_registry_clean_caches();
 
 // Detaches all cached conditions of one wait set. Caller must have exclusive

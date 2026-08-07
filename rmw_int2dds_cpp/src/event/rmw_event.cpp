@@ -34,6 +34,7 @@
 #include "rmw_int2dds_cpp/identifier.hpp"
 #include "rmw_int2dds_cpp/types.hpp"
 #include "../common/listeners.hpp"  // NOLINT(build/include_subdir)
+#include "../wait/waitset_registry.hpp"  // NOLINT(build/include)
 
 
 namespace
@@ -666,6 +667,8 @@ rmw_event_fini(rmw_event_t * event)
 {
   if (event != nullptr && event->data != nullptr) {
     auto * event_data = static_cast<rmw_int2dds_cpp::EventData *>(event->data);
+    // The EventData pointer is a wait set cache key (cached_events).
+    rmw_int2dds_cpp::waitset_registry_clean_caches();
     delete event_data;
     event->data = nullptr;
   }

@@ -558,8 +558,8 @@ rmw_destroy_client(rmw_node_t * node, rmw_client_t * client)
     }
 
     // Delete DDS entities
+    rmw_int2dds_cpp::waitset_registry_clean_caches();
     if (cli_data->response_status_condition != nullptr) {
-      rmw_int2dds_cpp::waitset_registry_clean_caches();
       int2dds_statuscondition_delete(cli_data->response_status_condition);
       cli_data->response_status_condition = nullptr;
     }

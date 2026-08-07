@@ -518,36 +518,40 @@ require_reattach_events(
 }
 
 // Attach the condition if new, then stamp it with the current generation so
-// detach_stale_attachments keeps it.
-void
+// detach_stale_attachments keeps it. False when the FFI attach failed.
+bool
 ensure_condition_attached(
   rmw_int2dds_cpp::WaitSetData * ws_data, Int2DdsStatusCondition * condition)
 {
   auto it = ws_data->attached_conditions.find(condition);
   if (it != ws_data->attached_conditions.end()) {
     it->second = ws_data->attach_generation;
-    return;
+    return true;
   }
 
   if (int2dds_waitset_attach_statuscondition(ws_data->waitset, condition) == INT2DDS_RET_OK) {
     ws_data->attached_conditions.emplace(condition, ws_data->attach_generation);
+    return true;
   }
+  return false;
 }
 
 // ensure_condition_attached for a guard condition.
-void
+bool
 ensure_guard_attached(
   rmw_int2dds_cpp::WaitSetData * ws_data, Int2DdsGuardCondition * guard)
 {
   auto it = ws_data->attached_guards.find(guard);
   if (it != ws_data->attached_guards.end()) {
     it->second = ws_data->attach_generation;
-    return;
+    return true;
   }
 
   if (int2dds_waitset_attach_guardcondition(ws_data->waitset, guard) == INT2DDS_RET_OK) {
     ws_data->attached_guards.emplace(guard, ws_data->attach_generation);
+    return true;
   }
+  return false;
 }
 
 // Detach conditions left with an older generation, the leftovers from entities
@@ -596,6 +600,8 @@ stamp_desired_attachments(
   ws_data->cached_clients.clear();
   ws_data->cached_events.clear();
 
+  bool all_attached = true;
+
   // Attach subscriptions
   if (subscriptions != nullptr) {
     for (size_t i = 0; i < subscriptions->subscriber_count; ++i) {
@@ -607,7 +613,10 @@ stamp_desired_attachments(
           bool ready = ensure_status_condition_mask(
             sub_data->datareader, &sub_data->status_condition, INT2DDS_STATUS_DATA_AVAILABLE);
           if (ready && sub_data->status_condition != nullptr) {
-            ensure_condition_attached(ws_data, sub_data->status_condition);
+            all_attached =
+              ensure_condition_attached(ws_data, sub_data->status_condition) && all_attached;
+          } else {
+            all_attached = false;
           }
         }
       }
@@ -622,7 +631,7 @@ stamp_desired_attachments(
         auto * gc_data =
           static_cast<rmw_int2dds_cpp::GuardConditionData *>(guard_conditions->guard_conditions[i]);
         if (gc_data != nullptr && gc_data->guard_condition != nullptr) {
-          ensure_guard_attached(ws_data, gc_data->guard_condition);
+          all_attached = ensure_guard_attached(ws_data, gc_data->guard_condition) && all_attached;
         }
       }
     }
@@ -640,7 +649,11 @@ stamp_desired_attachments(
             &srv_data->request_status_condition,
             INT2DDS_STATUS_DATA_AVAILABLE);
           if (ready && srv_data->request_status_condition != nullptr) {
-            ensure_condition_attached(ws_data, srv_data->request_status_condition);
+            all_attached =
+              ensure_condition_attached(ws_data, srv_data->request_status_condition) &&
+              all_attached;
+          } else {
+            all_attached = false;
           }
         }
       }
@@ -659,7 +672,11 @@ stamp_desired_attachments(
             &cli_data->response_status_condition,
             INT2DDS_STATUS_DATA_AVAILABLE);
           if (ready && cli_data->response_status_condition != nullptr) {
-            ensure_condition_attached(ws_data, cli_data->response_status_condition);
+            all_attached =
+              ensure_condition_attached(ws_data, cli_data->response_status_condition) &&
+              all_attached;
+          } else {
+            all_attached = false;
           }
         }
       }
@@ -685,10 +702,23 @@ stamp_desired_attachments(
       }
       auto * event_data = static_cast<rmw_int2dds_cpp::EventData *>(event->data);
       Int2DdsStatusCondition * status_condition = refresh_event_status_condition(event_data);
+      // A null condition here is usually permanent (unsupported event type),
+      // so it does not flag all_attached: that would force a rebuild on every
+      // call for as long as the event is waited on.
       if (status_condition != nullptr) {
-        ensure_condition_attached(ws_data, status_condition);
+        all_attached = ensure_condition_attached(ws_data, status_condition) && all_attached;
       }
     }
+  }
+
+  if (!all_attached) {
+    // An attach failed. Drop the cache so the next call rebuilds and retries,
+    // restoring the pre-cache behavior of attaching afresh on every call.
+    ws_data->cached_subscriptions.clear();
+    ws_data->cached_guard_conditions.clear();
+    ws_data->cached_services.clear();
+    ws_data->cached_clients.clear();
+    ws_data->cached_events.clear();
   }
 }
 
@@ -727,8 +757,12 @@ rmw_wait(
     return RMW_RET_ERROR;
   }
 
-  // Exclusive use of the wait set: blocks entity-destroy cache cleaning and
-  // rejects concurrent rmw_wait, which the rmw contract does not allow.
+  // inuse rejects concurrent rmw_wait, which the rmw contract does not allow.
+  // cache_busy marks the sections that read or rewrite the cache/attachments;
+  // entity-destroy cache cleaning waits it out instead of skipping, so a
+  // destroy can never delete a condition handle this wait set still holds. It
+  // is cleared before the blocking FFI wait: by then the attachments mirror
+  // the current entity set, which a concurrent destroy cannot touch.
   {
     std::lock_guard<std::mutex> lock(ws_data->lock);
     if (ws_data->inuse) {
@@ -736,6 +770,7 @@ rmw_wait(
       return RMW_RET_ERROR;
     }
     ws_data->inuse = true;
+    ws_data->cache_busy = true;
   }
 
   struct InUseGuard
@@ -743,8 +778,12 @@ rmw_wait(
     rmw_int2dds_cpp::WaitSetData * ws_data;
     ~InUseGuard()
     {
-      std::lock_guard<std::mutex> lock(ws_data->lock);
-      ws_data->inuse = false;
+      {
+        std::lock_guard<std::mutex> lock(ws_data->lock);
+        ws_data->inuse = false;
+        ws_data->cache_busy = false;
+      }
+      ws_data->cache_cv.notify_all();
     }
   } inuse_guard{ws_data};
 
@@ -802,6 +841,16 @@ rmw_wait(
       if (profile) {
         attach_elapsed_us = elapsed_us(attach_t0, std::chrono::steady_clock::now());
       }
+
+      // Attachments now mirror the current entity set, so a destroy of any
+      // entity not in it finds nothing of that entity cached here: cleaners
+      // may run or skip this wait set while it blocks. Release them before
+      // the wait so a destroy never stalls for the wait timeout.
+      {
+        std::lock_guard<std::mutex> lock(ws_data->lock);
+        ws_data->cache_busy = false;
+      }
+      ws_data->cache_cv.notify_all();
 
       // waitset_wait_ex_ns was consolidated into wait_ex_ns, which returns the triggered
       // conditions; the scan below re-checks conditions itself, so free the sequence.

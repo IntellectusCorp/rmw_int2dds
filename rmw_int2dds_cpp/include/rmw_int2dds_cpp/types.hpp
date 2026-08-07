@@ -17,6 +17,7 @@
 
 #include <array>
 #include <atomic>
+#include <condition_variable>
 #include <cstddef>
 #include <cstdint>
 #include <map>
@@ -264,7 +265,12 @@ struct WaitSetData
 
   // Guards the cached/attached state below against entity-destroy cache cleaning.
   std::mutex lock;
+  std::condition_variable cache_cv;
   bool inuse{false};
+  // True while rmw_wait reads or rewrites the cache/attachments outside the
+  // blocking FFI wait. Cleaners wait this flag out (signalled via cache_cv);
+  // it never spans int2dds_waitset_wait_ex_ns, so the wait is always short.
+  bool cache_busy{false};
 
   // Entity data pointers from the previous rmw_wait call. When the incoming
   // arrays are identical, the conditions attached last time are still attached

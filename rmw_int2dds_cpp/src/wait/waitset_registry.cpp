@@ -49,10 +49,17 @@ waitset_registry_clean_caches()
 {
   std::lock_guard<std::mutex> lock(g_registry_mutex);
   for (auto * ws_data : g_wait_sets) {
-    std::lock_guard<std::mutex> ws_lock(ws_data->lock);
+    std::unique_lock<std::mutex> ws_lock(ws_data->lock);
+    // cache_busy never spans the blocking FFI wait, so this wait is short.
+    ws_data->cache_cv.wait(ws_lock, [ws_data] {return !ws_data->cache_busy;});
     if (!ws_data->inuse) {
       waitset_detach_all(ws_data);
     }
+    // inuse without cache_busy means the wait set is blocked inside
+    // int2dds_waitset_wait_ex_ns with attachments and cache mirroring its
+    // current entity set. The entity being destroyed cannot be in that set
+    // (the rmw contract forbids destroying entities being waited on), so
+    // there is nothing of it here to clean and skipping is safe.
   }
 }
 
