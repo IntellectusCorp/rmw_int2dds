@@ -16,6 +16,7 @@
 
 #include <algorithm>
 #include <mutex>
+#include <new>
 #include <vector>
 
 #include "int2dds-ffi.h"  // NOLINT(build/include_subdir): vendored FFI header
@@ -37,11 +38,16 @@ std::vector<WaitSetData *> & wait_sets()
 }
 }  // namespace
 
-void
+bool
 waitset_registry_add(WaitSetData * ws_data)
 {
   std::lock_guard<std::mutex> lock(registry_mutex());
-  wait_sets().push_back(ws_data);
+  try {
+    wait_sets().push_back(ws_data);
+  } catch (const std::bad_alloc &) {
+    return false;  // report insert failure so the caller aborts wait-set creation
+  }
+  return true;
 }
 
 void

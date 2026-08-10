@@ -64,7 +64,15 @@ rmw_create_wait_set(rmw_context_t * context, size_t max_conditions)
   wait_set->implementation_identifier = rmw_int2dds_cpp::implementation_identifier;
   wait_set->data = ws_data;
 
-  rmw_int2dds_cpp::waitset_registry_add(ws_data);
+  if (!rmw_int2dds_cpp::waitset_registry_add(ws_data)) {
+    // Without a registry entry a later clean_caches could not see this wait set,
+    // so fail creation instead of leaking an unregistered wait set.
+    int2dds_waitset_delete(ws_data->waitset);
+    delete ws_data;
+    rmw_wait_set_free(wait_set);
+    RMW_SET_ERROR_MSG("failed to register wait set");
+    return nullptr;
+  }
 
   return wait_set;
 }
