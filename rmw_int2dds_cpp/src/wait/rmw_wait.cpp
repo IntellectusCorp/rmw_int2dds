@@ -703,11 +703,17 @@ stamp_desired_attachments(
       }
       auto * event_data = static_cast<rmw_int2dds_cpp::EventData *>(event->data);
       Int2DdsStatusCondition * status_condition = refresh_event_status_condition(event_data);
-      // A null condition here is usually permanent (unsupported event type),
-      // so it does not flag all_attached: that would force a rebuild on every
-      // call for as long as the event is waited on.
       if (status_condition != nullptr) {
         all_attached = ensure_condition_attached(ws_data, status_condition) && all_attached;
+      } else if (event_data != nullptr &&
+        event_type_to_status_mask(event_data->event_type) != 0)
+      {
+        // The event type is supported, so a null condition is transient (e.g. the
+        // entity's reader/writer is momentarily null while a content-filter update
+        // recreates it). Flag unattached so the next rmw_wait rebuilds and retries.
+        // A null for an unsupported type (mask == 0) is permanent and is left
+        // unflagged so it does not force a rebuild every call.
+        all_attached = false;
       }
     }
   }
