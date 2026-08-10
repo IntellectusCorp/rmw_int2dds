@@ -314,6 +314,10 @@ bool CdrSerializer::serialize_member_c(
         serialize_raw(first_element, array_size * element_size);
         return true;
       }
+      // For a fixed primitive the per-element loop below dereferences the accessor
+      // result directly (no fetch fallback here); a null first element cannot be
+      // bulk-copied and would be dereferenced as null, so fail cleanly instead.
+      return false;
     }
 
     // Serialize each element
