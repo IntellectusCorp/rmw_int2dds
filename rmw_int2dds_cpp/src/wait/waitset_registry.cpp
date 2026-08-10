@@ -25,30 +25,38 @@ namespace rmw_int2dds_cpp
 
 namespace
 {
-std::mutex g_registry_mutex;
-std::vector<WaitSetData *> g_wait_sets;
+std::mutex & registry_mutex()
+{
+  static std::mutex * m = new std::mutex();  // leaked on purpose: valid during static destruction
+  return *m;
+}
+std::vector<WaitSetData *> & wait_sets()
+{
+  static std::vector<WaitSetData *> * v = new std::vector<WaitSetData *>();
+  return *v;
+}
 }  // namespace
 
 void
 waitset_registry_add(WaitSetData * ws_data)
 {
-  std::lock_guard<std::mutex> lock(g_registry_mutex);
-  g_wait_sets.push_back(ws_data);
+  std::lock_guard<std::mutex> lock(registry_mutex());
+  wait_sets().push_back(ws_data);
 }
 
 void
 waitset_registry_remove(WaitSetData * ws_data)
 {
-  std::lock_guard<std::mutex> lock(g_registry_mutex);
-  g_wait_sets.erase(
-    std::remove(g_wait_sets.begin(), g_wait_sets.end(), ws_data), g_wait_sets.end());
+  std::lock_guard<std::mutex> lock(registry_mutex());
+  wait_sets().erase(
+    std::remove(wait_sets().begin(), wait_sets().end(), ws_data), wait_sets().end());
 }
 
 void
 waitset_registry_clean_caches()
 {
-  std::lock_guard<std::mutex> lock(g_registry_mutex);
-  for (auto * ws_data : g_wait_sets) {
+  std::lock_guard<std::mutex> lock(registry_mutex());
+  for (auto * ws_data : wait_sets()) {
     std::unique_lock<std::mutex> ws_lock(ws_data->lock);
     // cache_busy never spans the blocking FFI wait, so this wait is short.
     ws_data->cache_cv.wait(ws_lock, [ws_data] {return !ws_data->cache_busy;});
