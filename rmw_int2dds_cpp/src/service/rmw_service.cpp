@@ -580,6 +580,16 @@ rmw_destroy_service(rmw_node_t * node, rmw_service_t * service)
     if (srv_data->request_topic != nullptr) {
       int2dds_delete_topic(srv_data->request_topic);
     }
+  } else {
+    // The detach path already released and nulled the reader/writer/topics but
+    // left request_status_condition live and srv_data still referenced by any
+    // wait-set cache. Clean the caches and release the condition before srv_data
+    // is freed (no double free: the detach path never touched the condition).
+    rmw_int2dds_cpp::waitset_registry_clean_caches();
+    if (srv_data->request_status_condition != nullptr) {
+      int2dds_statuscondition_delete(srv_data->request_status_condition);
+      srv_data->request_status_condition = nullptr;
+    }
   }
 
   // Free service name
