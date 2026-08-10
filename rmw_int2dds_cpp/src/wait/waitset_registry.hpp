@@ -20,7 +20,7 @@
 namespace rmw_int2dds_cpp
 {
 
-void waitset_registry_add(WaitSetData * ws_data);
+bool waitset_registry_add(WaitSetData * ws_data);
 void waitset_registry_remove(WaitSetData * ws_data);
 
 // Detaches every cached condition from every registered wait set. Waits out
