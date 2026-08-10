@@ -619,6 +619,9 @@ stamp_desired_attachments(
           } else {
             all_attached = false;
           }
+        } else {
+          // reader momentarily null: rebuild attachments on the next rmw_wait
+          all_attached = false;
         }
       }
     }
@@ -656,6 +659,9 @@ stamp_desired_attachments(
           } else {
             all_attached = false;
           }
+        } else {
+          // reader momentarily null: rebuild attachments on the next rmw_wait
+          all_attached = false;
         }
       }
     }
@@ -679,6 +685,9 @@ stamp_desired_attachments(
           } else {
             all_attached = false;
           }
+        } else {
+          // reader momentarily null: rebuild attachments on the next rmw_wait
+          all_attached = false;
         }
       }
     }
