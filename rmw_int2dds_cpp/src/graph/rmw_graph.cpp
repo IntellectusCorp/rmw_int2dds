@@ -23,6 +23,7 @@
 #include <string>
 #include <thread>
 #include <vector>
+#include <utility>
 #include <optional>
 
 #include "rmw/rmw.h"
@@ -182,10 +183,13 @@ static void for_each_publication_snapshot(
   const std::function<void(Int2DdsPublicationBuiltinTopicData *)> & callback)
 {
   // The count/by-index accessors were consolidated into a single snapshot sequence.
+  // ALIVE only: this pass feeds add_entity, and a departed instance carries no announcement
+  // to build an entity from. Departures come from collect_departed_publications below.
   Int2DdsPublicationBuiltinTopicDataSeq * seq = nullptr;
   if (
-    int2dds_participant_take_discovered_publications_snapshot(
-      context_data->participant, timeout_ms, &seq) != INT2DDS_RET_OK ||
+    int2dds_participant_take_discovered_publications_snapshot_filtered(
+      context_data->participant, timeout_ms, INT2DDS_INSTANCE_STATE_ALIVE, &seq) !=
+    INT2DDS_RET_OK ||
     seq == nullptr)
   {
     return;
@@ -211,10 +215,12 @@ static void for_each_subscription_snapshot(
   int timeout_ms,
   const std::function<void(Int2DdsSubscriptionBuiltinTopicData *)> & callback)
 {
+  // ALIVE only, for the same reason as for_each_publication_snapshot.
   Int2DdsSubscriptionBuiltinTopicDataSeq * seq = nullptr;
   if (
-    int2dds_participant_take_discovered_subscriptions_snapshot(
-      context_data->participant, timeout_ms, &seq) != INT2DDS_RET_OK ||
+    int2dds_participant_take_discovered_subscriptions_snapshot_filtered(
+      context_data->participant, timeout_ms, INT2DDS_INSTANCE_STATE_ALIVE, &seq) !=
+    INT2DDS_RET_OK ||
     seq == nullptr)
   {
     return;
@@ -233,6 +239,81 @@ static void for_each_subscription_snapshot(
     }
   }
   int2dds_subscription_builtin_topic_data_seq_delete(seq);
+}
+
+// Endpoint GUIDs DDS has reported as gone.
+//
+// A dispose travels as a key with an empty payload, so identity has to come from the instance
+// handle rather than from an announcement. The core pins the instance handle to be the endpoint
+// GUID (int2DDS test `the_instance_handle_is_the_endpoint_guid`), which is what makes a departure
+// actionable from the handle alone.
+//
+// A failure here returns what was collected so far, which is empty on the first call. That is the
+// intended direction of error: a departure that is missed is retried on the next pass, since a
+// read does not consume the instance, whereas a departure that is invented deletes a live entity.
+static std::vector<std::array<uint8_t, 16>> collect_departed_publications(
+  rmw_int2dds_cpp::ContextData * context_data,
+  int timeout_ms)
+{
+  std::vector<std::array<uint8_t, 16>> departed;
+  Int2DdsPublicationBuiltinTopicDataSeq * seq = nullptr;
+  if (
+    int2dds_participant_take_discovered_publications_snapshot_filtered(
+      context_data->participant, timeout_ms,
+      INT2DDS_INSTANCE_STATE_NOT_ALIVE_DISPOSED | INT2DDS_INSTANCE_STATE_NOT_ALIVE_NO_WRITERS,
+      &seq) != INT2DDS_RET_OK ||
+    seq == nullptr)
+  {
+    return departed;
+  }
+
+  uintptr_t count = 0;
+  if (int2dds_publication_builtin_topic_data_seq_length(seq, &count) == INT2DDS_RET_OK) {
+    for (uintptr_t i = 0; i < count; ++i) {
+      std::array<uint8_t, 16> endpoint_guid = {};
+      if (
+        int2dds_publication_builtin_topic_data_seq_get_instance_handle(
+          seq, i, reinterpret_cast<uint8_t(*)[16]>(&endpoint_guid)) == INT2DDS_RET_OK)
+      {
+        departed.push_back(endpoint_guid);
+      }
+    }
+  }
+  int2dds_publication_builtin_topic_data_seq_delete(seq);
+  return departed;
+}
+
+// See collect_departed_publications.
+static std::vector<std::array<uint8_t, 16>> collect_departed_subscriptions(
+  rmw_int2dds_cpp::ContextData * context_data,
+  int timeout_ms)
+{
+  std::vector<std::array<uint8_t, 16>> departed;
+  Int2DdsSubscriptionBuiltinTopicDataSeq * seq = nullptr;
+  if (
+    int2dds_participant_take_discovered_subscriptions_snapshot_filtered(
+      context_data->participant, timeout_ms,
+      INT2DDS_INSTANCE_STATE_NOT_ALIVE_DISPOSED | INT2DDS_INSTANCE_STATE_NOT_ALIVE_NO_WRITERS,
+      &seq) != INT2DDS_RET_OK ||
+    seq == nullptr)
+  {
+    return departed;
+  }
+
+  uintptr_t count = 0;
+  if (int2dds_subscription_builtin_topic_data_seq_length(seq, &count) == INT2DDS_RET_OK) {
+    for (uintptr_t i = 0; i < count; ++i) {
+      std::array<uint8_t, 16> endpoint_guid = {};
+      if (
+        int2dds_subscription_builtin_topic_data_seq_get_instance_handle(
+          seq, i, reinterpret_cast<uint8_t(*)[16]>(&endpoint_guid)) == INT2DDS_RET_OK)
+      {
+        departed.push_back(endpoint_guid);
+      }
+    }
+  }
+  int2dds_subscription_builtin_topic_data_seq_delete(seq);
+  return departed;
 }
 
 static std::set<std::array<uint8_t, 12>> get_remote_participant_keys(
@@ -540,18 +621,40 @@ static void sync_remote_entities_to_common(rmw_int2dds_cpp::ContextData * contex
           deadline_sec, deadline_nsec, 0x7fffffff, 0x7fffffffu)};
     });
 
+  // Departures come from DDS saying so, never from absence in the pass above.
+  //
+  // A snapshot reports what the builtin reader cache holds at that instant, not what is alive.
+  // Deleting whatever is missing from it cannot tell an endpoint that has departed from one whose
+  // announcement has not arrived yet, and while a graph is still coming up those look identical.
+  // What that cost was whole participants dropping out at once -- every parameter service of a
+  // node going together, to be rediscovered moments later.
+  std::vector<std::pair<std::array<uint8_t, 16>, bool>> gone;
+  for (const auto & guid : collect_departed_publications(
+      context_data, static_cast<int>(kGraphSnapshotTimeout.count())))
+  {
+    gone.emplace_back(guid, false);
+  }
+  for (const auto & guid : collect_departed_subscriptions(
+      context_data, static_cast<int>(kGraphSnapshotTimeout.count())))
+  {
+    gone.emplace_back(guid, true);
+  }
+
   std::lock_guard<std::mutex> lock(context_data->remote_sync_mutex);
   auto & synced = context_data->synced_remote_entities;
 
-  for (auto it = synced.begin(); it != synced.end(); ) {
-    if (current.find(it->first) == current.end()) {
-      rmw_gid_t gid = {};
-      std::memcpy(gid.data, it->first.data(), RMW_GID_STORAGE_SIZE);
-      context_data->common->graph_cache.remove_entity(gid, it->second);
-      it = synced.erase(it);
-    } else {
-      ++it;
+  for (const auto & departed : gone) {
+    std::array<uint8_t, RMW_GID_STORAGE_SIZE> key = {};
+    std::memcpy(key.data(), departed.first.data(), departed.first.size());
+    auto it = synced.find(key);
+    if (it == synced.end()) {
+      continue;  // never ours, or already forgotten: a read leaves the instance in place, so the
+                 // same departure comes back on every pass
     }
+    rmw_gid_t gid = {};
+    std::memcpy(gid.data, key.data(), RMW_GID_STORAGE_SIZE);
+    context_data->common->graph_cache.remove_entity(gid, departed.second);
+    synced.erase(it);
   }
 
   for (const auto & entry : current) {
