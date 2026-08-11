@@ -851,7 +851,11 @@ rmw_wait(
         ++ws_data->attach_generation;
         stamp_desired_attachments(
           ws_data, subscriptions, guard_conditions, services, clients, events);
+        const auto detach_t0 = std::chrono::steady_clock::now();
         detach_stale_attachments(ws_data);
+        if (profile) {
+          detach_elapsed_us = elapsed_us(detach_t0, std::chrono::steady_clock::now());
+        }
       }
       if (profile) {
         attach_elapsed_us = elapsed_us(attach_t0, std::chrono::steady_clock::now());
