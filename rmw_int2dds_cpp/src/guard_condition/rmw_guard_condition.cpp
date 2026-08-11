@@ -19,6 +19,7 @@
 #include "int2dds-ffi.h"
 #include "rmw_int2dds_cpp/identifier.hpp"
 #include "rmw_int2dds_cpp/types.hpp"
+#include "../wait/waitset_registry.hpp"  // NOLINT(build/include)
 
 extern "C"
 {
@@ -76,6 +77,9 @@ rmw_destroy_guard_condition(rmw_guard_condition_t * guard_condition)
 
   auto * gc_data = static_cast<rmw_int2dds_cpp::GuardConditionData *>(guard_condition->data);
   if (gc_data != nullptr) {
+    // Clean regardless of handle ownership: gc_data itself is what wait set
+    // caches key on, and it is freed below either way.
+    rmw_int2dds_cpp::waitset_registry_clean_caches();
     if (gc_data->owns_guard_condition && gc_data->guard_condition != nullptr) {
       int2dds_guardcondition_delete(gc_data->guard_condition);
     }
