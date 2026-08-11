@@ -316,50 +316,6 @@ static std::vector<std::array<uint8_t, 16>> collect_departed_subscriptions(
   return departed;
 }
 
-static std::set<std::array<uint8_t, 12>> get_remote_participant_keys(
-  rmw_int2dds_cpp::ContextData * context_data,
-  std::chrono::milliseconds max_wait = std::chrono::milliseconds(0))
-{
-  const auto deadline = std::chrono::steady_clock::now() + max_wait;
-  while (true) {
-    std::set<std::array<uint8_t, 12>> keys;
-    uintptr_t count = 0;
-    const Int2DdsRet count_ret = int2dds_participant_get_discovered_participants(
-      context_data->participant, nullptr, 0, &count);
-    if (count_ret == INT2DDS_RET_OK && count > 0) {
-      std::vector<std::array<uint8_t, 16>> handles(count);
-      auto * handles_ptr = reinterpret_cast<uint8_t(*)[16]>(handles.data());
-      const Int2DdsRet handles_ret = int2dds_participant_get_discovered_participants(
-        context_data->participant, handles_ptr, count, &count);
-      if (handles_ret == INT2DDS_RET_OK) {
-        for (size_t i = 0; i < count; ++i) {
-          Int2DdsParticipantBuiltinTopicData * data = nullptr;
-          const Int2DdsRet data_ret = int2dds_participant_get_discovered_participant_data(
-            context_data->participant, reinterpret_cast<const uint8_t(*)[16]>(&handles[i]), &data);
-          if (data_ret != INT2DDS_RET_OK || data == nullptr) {
-            continue;
-          }
-
-          std::array<uint8_t, 12> key = {};
-          if (
-            int2dds_participant_builtin_topic_data_get_key(
-              data, reinterpret_cast<uint8_t(*)[12]>(&key)) == INT2DDS_RET_OK)
-          {
-            keys.insert(key);
-          }
-          int2dds_participant_builtin_topic_data_destroy(data);
-        }
-      }
-    }
-
-    if (!keys.empty() || std::chrono::steady_clock::now() >= deadline) {
-      return keys;
-    }
-
-    std::this_thread::sleep_for(std::chrono::milliseconds(50));
-  }
-}
-
 // P3: mirror remote (other-participant) DDS endpoints discovered via int2dds
 // built-in discovery into the standard rmw_dds_common GraphCache entity layer,
 // keyed by their DDS endpoint GUID so the node-association data carried over
@@ -491,7 +447,16 @@ static void sync_remote_entities_to_common(rmw_int2dds_cpp::ContextData * contex
     return;
   }
 
-  const auto remote_keys = get_remote_participant_keys(context_data, kGraphSnapshotTimeout);
+  // Telling a remote endpoint from one of our own only needs our own key.
+  //
+  // This used to ask for the list of discovered participants and keep an endpoint only if its
+  // participant appeared in it. That list was whatever had answered so far -- the lookup returned
+  // as soon as a single participant had -- so on a graph of 49 participants it came back with 6,
+  // and every endpoint behind the other 43 was treated as belonging to nobody. Our own participant
+  // key is known directly, so the list buys nothing.
+  std::array<uint8_t, 12> local_participant_key = {};
+  std::memcpy(
+    local_participant_key.data(), context_data->common->gid.data, local_participant_key.size());
 
   struct RemoteEntity
   {
@@ -518,8 +483,8 @@ static void sync_remote_entities_to_common(rmw_int2dds_cpp::ContextData * contex
       const auto effective_key =
       (participant_ret == INT2DDS_RET_OK && !is_zero_discovery_key(participant_key)) ?
       participant_key : participant_key_from_endpoint_guid(endpoint_guid);
-      if (remote_keys.find(effective_key) == remote_keys.end()) {
-        return;  // local or unknown participant
+      if (effective_key == local_participant_key) {
+        return;  // our own endpoint; the local side registers those itself
       }
       std::string topic_name;
       std::string type_name;
@@ -579,8 +544,8 @@ static void sync_remote_entities_to_common(rmw_int2dds_cpp::ContextData * contex
       const auto effective_key =
       (participant_ret == INT2DDS_RET_OK && !is_zero_discovery_key(participant_key)) ?
       participant_key : participant_key_from_endpoint_guid(endpoint_guid);
-      if (remote_keys.find(effective_key) == remote_keys.end()) {
-        return;
+      if (effective_key == local_participant_key) {
+        return;  // our own endpoint; the local side registers those itself
       }
       std::string topic_name;
       std::string type_name;
