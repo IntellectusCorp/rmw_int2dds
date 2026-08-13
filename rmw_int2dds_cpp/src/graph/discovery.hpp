@@ -34,6 +34,11 @@ rmw_ret_t init_discovery(ContextData * context_data, const char * enclave);
 // Tear down discovery: join the listener thread and release the Context.
 void fini_discovery(ContextData * context_data);
 
+// Register / unregister the SEDP endpoint-discovery push consumer on the core
+// participant. enable also seeds already-discovered endpoints (bootstrap).
+void enable_endpoint_push(ContextData * context_data);
+void disable_endpoint_push(ContextData * context_data);
+
 // Publish local node graph changes through ros_discovery_info.
 rmw_ret_t announce_node(
   ContextData * context_data, const std::string & name,
