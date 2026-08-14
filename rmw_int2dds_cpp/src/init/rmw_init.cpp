@@ -349,7 +349,7 @@ rmw_init(const rmw_init_options_t * options, rmw_context_t * context)
   // default to the ROS/RMW path without changing the core's own default (65000).
   // overwrite=0 preserves any user-provided value.
   setenv("INT2DDS_DATA_FRAG_SIZE", "1344", 0);
-
+  setenv("INT2DDS_MAX_MESSAGE_SIZE", "13440", 0);
   // Create context data
   auto * context_data = new (std::nothrow) rmw_int2dds_cpp::ContextData();
   if (context_data == nullptr) {
