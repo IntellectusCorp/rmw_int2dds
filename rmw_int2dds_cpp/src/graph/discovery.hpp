@@ -34,11 +34,6 @@ rmw_ret_t init_discovery(ContextData * context_data, const char * enclave);
 // Tear down discovery: join the listener thread and release the Context.
 void fini_discovery(ContextData * context_data);
 
-// Register / unregister the SEDP endpoint-discovery push consumer on the core
-// participant. enable also seeds already-discovered endpoints (bootstrap).
-void enable_endpoint_push(ContextData * context_data);
-void disable_endpoint_push(ContextData * context_data);
-
 // Publish local node graph changes through ros_discovery_info.
 rmw_ret_t announce_node(
   ContextData * context_data, const std::string & name,
@@ -86,6 +81,12 @@ rmw_ret_t common_dissociate_local_reader(
   const rmw_gid_t & reader_gid,
   const std::string & node_name,
   const std::string & node_namespace);
+
+// Register/unregister the SEDP push callback that mirrors remote endpoint
+// discovery/dispose into the GraphCache incrementally, so graph queries need
+// no per-call snapshot pull.
+void register_graph_discovery_callback(ContextData * context_data);
+void unregister_graph_discovery_callback(ContextData * context_data);
 
 }  // namespace rmw_int2dds_cpp
 
