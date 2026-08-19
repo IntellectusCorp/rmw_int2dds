@@ -1,0 +1,47 @@
+# Build + test across supported ROS 2 distributions.
+#
+# rmw_int2dds_cpp links against the int2DDS FFI library (libint2dds_ffi.so +
+# int2dds-ffi.h). That library is not committed here: the int2dds_ffi_vendor
+# package in this repository downloads the prebuilt tarball from
+# https://github.com/IntellectusCorp/int2dds_ffi_vendor/releases at CMake
+# configure time and verifies it against the sha256 in the bundled manifest.
+# Building int2dds_ffi_vendor before rmw_int2dds_cpp is therefore all CI needs,
+# and it requires outbound network access to github.com.
+name: build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build-test:
+    runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        ros_distribution: [humble, jazzy]
+        include:
+          - ros_distribution: humble
+            container: ros:humble-ros-base
+          - ros_distribution: jazzy
+            container: ros:jazzy-ros-base
+    container:
+      image: ${{ matrix.container }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build and test
+        uses: ros-tooling/action-ros-ci@master
+        with:
+          package-name: int2dds_ffi_vendor rmw_int2dds_cpp
+          target-ros2-distro: ${{ matrix.ros_distribution }}
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-${{ matrix.ros_distribution }}
+          path: ros_ws/build/rmw_int2dds_cpp/test_results/
+          if-no-files-found: ignore

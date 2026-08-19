@@ -1,0 +1,27 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>int2dds_ffi_vendor</name>
+  <version>0.1.0</version>
+  <description>
+    Vendor package that fetches the prebuilt int2DDS FFI library
+    (shared library + C header) for the host platform and exposes it to
+    the ROS 2 build as an imported CMake target. Used by rmw_int2dds_cpp.
+  </description>
+
+  <maintainer email="int2dds@int2.us">Jungsup Lee</maintainer>
+
+  <license>Apache-2.0</license>
+
+  <url type="repository">https://github.com/IntellectusCorp/int2dds_ffi_vendor</url>
+  <url type="bugtracker">https://github.com/IntellectusCorp/int2dds_ffi_vendor/issues</url>
+  <url type="website">https://github.com/IntellectusCorp/int2DDS</url>
+
+  <author email="int2dds@int2.us">Intellectus Corp.</author>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

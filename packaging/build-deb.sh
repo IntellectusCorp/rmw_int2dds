@@ -23,9 +23,9 @@ case "${DISTRO}" in
 esac
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-VENDOR_REPO_PATH="${VENDOR_REPO_PATH:-${REPO_ROOT}/../int2dds_ffi_vendor}"
-if [ ! -f "${VENDOR_REPO_PATH}/package.xml" ]; then
-  echo "vendor repo not found at ${VENDOR_REPO_PATH}; set VENDOR_REPO_PATH" >&2
+# int2dds_ffi_vendor is a package inside this repository (not a sibling checkout).
+if [ ! -f "${REPO_ROOT}/int2dds_ffi_vendor/package.xml" ]; then
+  echo "int2dds_ffi_vendor/package.xml missing from ${REPO_ROOT}; incomplete checkout?" >&2
   exit 1
 fi
 
@@ -35,9 +35,7 @@ docker run --privileged --rm tonistiigi/binfmt --install all >/dev/null 2>&1 || 
 docker run --rm --platform "${PLATFORM}" \
   -e ROS_DISTRO="${DISTRO}" \
   -e RMW_REPO=/ws/rmw_int2dds \
-  -e VENDOR_SRC=/ws/int2dds_ffi_vendor \
   -e INT2DDS_FFI_TOKEN="${INT2DDS_FFI_TOKEN:-}" \
   -v "${REPO_ROOT}":/ws/rmw_int2dds \
-  -v "${VENDOR_REPO_PATH}":/ws/int2dds_ffi_vendor \
   "ros:${DISTRO}-ros-base" \
   bash /ws/rmw_int2dds/packaging/in-container-build.sh
