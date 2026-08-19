@@ -85,7 +85,7 @@ rmw_ret_t publish_entities_info(
   ret = rmw_serialize(msg, type_support, &serialized);
   if (ret == RMW_RET_OK) {
     const Int2DdsRet wret = int2dds_datawriter_write_serialized(
-      writer, serialized.buffer, serialized.buffer_length, nullptr, 0);
+      writer, serialized.buffer, serialized.buffer_length);
     if (wret != INT2DDS_RET_OK) {
       ret = RMW_RET_ERROR;
     }

@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <cstdlib>
+
 #include "rmw/rmw.h"
 #include "rmw/error_handling.h"
 #include "rmw/init.h"
@@ -24,6 +26,7 @@
 #include "rmw_int2dds_cpp/identifier.hpp"
 #include "rmw_int2dds_cpp/types.hpp"
 #include "../graph/discovery.hpp"
+#include "../wait/waitset_registry.hpp"
 
 namespace rmw_int2dds_cpp
 {
@@ -39,6 +42,9 @@ release_context_resources(ContextData * context_data)
     fini_discovery(context_data);
   }
   if (context_data->graph_guard_condition != nullptr) {
+    // Defensive: make sure no wait set still references this guard before freeing
+    // it, covering out-of-contract teardown where the context outlives a wait set.
+    waitset_registry_clean_caches();
     int2dds_guardcondition_delete(context_data->graph_guard_condition);
     context_data->graph_guard_condition = nullptr;
   }
@@ -258,6 +264,13 @@ rmw_init(const rmw_init_options_t * options, rmw_context_t * context)
     RMW_SET_ERROR_MSG("context already initialized");
     return RMW_RET_INVALID_ARGUMENT;
   }
+
+  // Default the DATA_FRAG fragment size to 1344 bytes for writers created through
+  // this RMW, unless INT2DDS_DATA_FRAG_SIZE is already set. The int2dds core reads
+  // this env when a writer's DataFrag QoS is unset; seeding it here scopes the 1344
+  // default to the ROS/RMW path without changing the core's own default (65000).
+  // overwrite=0 preserves any user-provided value.
+  setenv("INT2DDS_DATA_FRAG_SIZE", "1344", 0);
 
   // Create context data
   auto * context_data = new (std::nothrow) rmw_int2dds_cpp::ContextData();

@@ -191,9 +191,7 @@ rmw_send_request(
   Int2DdsRet ret = int2dds_datawriter_write_serialized(
     cli_data->request_writer,
     send_buffer.data(),
-    send_buffer.size(),
-    nullptr,
-    0);
+    send_buffer.size());
 
   if (ret != INT2DDS_RET_OK) {
     RMW_SET_ERROR_MSG("failed to send request");

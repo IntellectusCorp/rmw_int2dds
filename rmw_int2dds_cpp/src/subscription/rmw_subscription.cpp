@@ -38,6 +38,7 @@
 #include "int2dds-ffi.h"
 #include "rmw_int2dds_cpp/identifier.hpp"
 #include "rmw_int2dds_cpp/types.hpp"
+#include "../wait/waitset_registry.hpp"  // NOLINT(build/include)
 #include "../common/listeners.hpp"  // NOLINT(build/include_subdir)
 #include "../common/type_hash_qos.hpp"
 #include "../graph/discovery.hpp"
@@ -595,6 +596,7 @@ destroy_subscription_reader_entities(
     return;
   }
 
+  rmw_int2dds_cpp::waitset_registry_clean_caches();
   if (sub_data->status_condition != nullptr) {
     int2dds_statuscondition_delete(sub_data->status_condition);
     sub_data->status_condition = nullptr;
