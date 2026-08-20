@@ -5,22 +5,13 @@ project(rmw_int2dds_cpp)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# The matched-event smoke executable exercises APIs that are not present in
-# ROS 2 Humble's rmw headers. Keep that target opt-in on Humble while building
-# the Humble-compatible event validation target normally.
-if("$ENV{ROS_DISTRO}" STREQUAL "humble")
-  set(RMW_INT2DDS_BUILD_MATCHED_EVENT_TESTS_DEFAULT OFF)
-else()
-  set(RMW_INT2DDS_BUILD_MATCHED_EVENT_TESTS_DEFAULT ON)
-endif()
 option(
   RMW_INT2DDS_BUILD_EVENT_VALIDATION
   "Build RMW event validation executable"
   ON)
-option(
-  RMW_INT2DDS_BUILD_MATCHED_EVENT_TESTS
-  "Build matched-event smoke executable that depends on newer RMW matched-event APIs"
-  ${RMW_INT2DDS_BUILD_MATCHED_EVENT_TESTS_DEFAULT})
+# RMW_INT2DDS_BUILD_MATCHED_EVENT_TESTS is declared further down, after
+# find_package(rmw): its default is probed from the installed rmw headers rather
+# than guessed from the environment.
 
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   add_compile_options(-Wall -Wextra -Wpedantic)
@@ -50,6 +41,34 @@ find_package(std_msgs REQUIRED)
 # it (rmw_fastrtps, rmw_cyclonedds, rmw_connextdds, rmw_zenoh: zero references).
 # The rclcpp-based QoS/perf probes live in the sibling rmw_int2dds_validation
 # package instead, mirroring test_rmw_zenoh_cpp in ros2/rmw_zenoh.
+
+# The matched-event smoke executable is built entirely on rmw matched-event APIs
+# that only exist in newer rmw headers, so ask the headers whether they are there
+# - the same question test_event_validation.cpp asks with __has_include.
+#
+# It must NOT be inferred from $ENV{ROS_DISTRO}: ros_environment is the only
+# package that exports that variable, and the ROS build farm never installs it
+# (the devel job builds in a bare ubuntu image carrying only the declared rosdep
+# keys), so it is empty there and a distro comparison silently picks the wrong
+# branch. ros:humble-ros-base does set it, which is why guessing from the distro
+# worked in GitHub Actions and broke only on the farm.
+find_file(RMW_INT2DDS_MATCHED_EVENT_HEADER
+  NAMES rmw/events_statuses/matched.h
+  HINTS ${rmw_INCLUDE_DIRS})
+mark_as_advanced(RMW_INT2DDS_MATCHED_EVENT_HEADER)
+if(RMW_INT2DDS_MATCHED_EVENT_HEADER)
+  set(RMW_INT2DDS_BUILD_MATCHED_EVENT_TESTS_DEFAULT ON)
+  message(STATUS "rmw matched-event API found: ${RMW_INT2DDS_MATCHED_EVENT_HEADER}")
+else()
+  set(RMW_INT2DDS_BUILD_MATCHED_EVENT_TESTS_DEFAULT OFF)
+  message(STATUS
+    "rmw matched-event API not available (searched: ${rmw_INCLUDE_DIRS}) - "
+    "the matched-event smoke target is disabled for this rmw version.")
+endif()
+option(
+  RMW_INT2DDS_BUILD_MATCHED_EVENT_TESTS
+  "Build matched-event smoke executable that depends on newer RMW matched-event APIs"
+  ${RMW_INT2DDS_BUILD_MATCHED_EVENT_TESTS_DEFAULT})
 
 # ============================================================================
 # int2dds-ffi library
