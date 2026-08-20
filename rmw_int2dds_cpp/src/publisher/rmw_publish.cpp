@@ -210,9 +210,7 @@ rmw_publish(
         ret = int2dds_datawriter_commit_serialized_write(
           pub_data->datawriter,
           loan_guard.release(),
-          serialized_size,
-          nullptr,
-          0);
+          serialized_size);
         if (profile) {
           commit_us = now_us() - commit_t0;
         }
@@ -260,9 +258,7 @@ rmw_publish(
   ret = int2dds_datawriter_write_serialized(
     pub_data->datawriter,
     serializer.get_data(),
-    serialized_size,
-    nullptr,
-    0);
+    serialized_size);
   if (profile) {
     fallback_write_us = now_us() - write_t0;
   }
@@ -311,9 +307,7 @@ rmw_publish_serialized_message(
   Int2DdsRet ret = int2dds_datawriter_write_serialized(
     pub_data->datawriter,
     serialized_message->buffer,
-    serialized_message->buffer_length,
-    nullptr,
-    0);
+    serialized_message->buffer_length);
 
   if (ret != INT2DDS_RET_OK) {
     RMW_SET_ERROR_MSG("failed to write serialized message");

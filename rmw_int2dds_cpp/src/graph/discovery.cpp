@@ -85,7 +85,7 @@ rmw_ret_t publish_entities_info(
   ret = rmw_serialize(msg, type_support, &serialized);
   if (ret == RMW_RET_OK) {
     const Int2DdsRet wret = int2dds_datawriter_write_serialized(
-      writer, serialized.buffer, serialized.buffer_length, nullptr, 0);
+      writer, serialized.buffer, serialized.buffer_length);
     if (wret != INT2DDS_RET_OK) {
       ret = RMW_RET_ERROR;
     }
@@ -255,6 +255,9 @@ rmw_ret_t init_discovery(ContextData * context_data, const char * enclave)
   context_data->common->listener_thread =
     std::thread(listener_loop, context_data, type_support);
 
+  // Consume core SEDP endpoint discovery incrementally (and bootstrap current state).
+  enable_endpoint_push(context_data);
+
   return RMW_RET_OK;
 }
 
@@ -263,6 +266,8 @@ void fini_discovery(ContextData * context_data)
   if (context_data == nullptr) {
     return;
   }
+  // Stop new callbacks from touching context_data before we tear it down.
+  disable_endpoint_push(context_data);
   if (context_data->common) {
     context_data->common->graph_cache.clear_on_change_callback();
     context_data->common->thread_is_running.store(false);
@@ -282,7 +287,10 @@ void fini_discovery(ContextData * context_data)
     int2dds_delete_topic(context_data->discovery_topic);
     context_data->discovery_topic = nullptr;
   }
-  context_data->common.reset();
+  {
+    std::lock_guard<std::mutex> lock(context_data->remote_sync_mutex);
+    context_data->common.reset();
+  }
 }
 
 rmw_ret_t announce_node(

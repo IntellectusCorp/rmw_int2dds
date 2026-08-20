@@ -85,6 +85,7 @@ add_library(rmw_int2dds_cpp SHARED
   # Wait set
   src/wait/rmw_wait.cpp
   src/wait/rmw_wait_set.cpp
+  src/wait/waitset_registry.cpp
 
   # Service
   src/service/rmw_service.cpp
@@ -503,11 +504,30 @@ if(BUILD_TESTING)
       -whitespace/line_length
   )
 
-  # Unit tests (uncomment when needed)
-  # find_package(ament_cmake_gtest REQUIRED)
-  # find_package(test_msgs REQUIRED)
-  # ament_add_gtest(test_rmw_init test/test_rmw_init.cpp)
-  # target_link_libraries(test_rmw_init rmw_int2dds_cpp)
+  # Wait set unit tests. rmw_create_wait_set and rmw_create_guard_condition
+  # only validate the context implementation identifier, so these run without a
+  # DDS participant: no discovery, no sockets, no traffic, and no flakiness
+  # from either.
+  find_package(ament_cmake_gtest REQUIRED)
+  ament_add_gtest(test_rmw_wait_guards test/test_rmw_wait_guards.cpp
+    TIMEOUT 120
+    ENV RMW_IMPLEMENTATION=rmw_int2dds_cpp ROS_DOMAIN_ID=71
+  )
+  if(TARGET test_rmw_wait_guards)
+    target_include_directories(test_rmw_wait_guards PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+    target_link_libraries(test_rmw_wait_guards
+      rmw_int2dds_cpp
+      int2dds_ffi::int2dds_ffi
+      ${PLATFORM_LIBS}
+    )
+    ament_target_dependencies(test_rmw_wait_guards rmw rcutils)
+    if(WIN32)
+      add_custom_command(TARGET test_rmw_wait_guards POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        $<TARGET_FILE:int2dds_ffi::int2dds_ffi> $<TARGET_FILE_DIR:test_rmw_wait_guards>
+        COMMENT "Copying int2dds_ffi.dll for test_rmw_wait_guards")
+    endif()
+  endif()
 endif()
 
 # ============================================================================

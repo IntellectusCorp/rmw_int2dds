@@ -24,10 +24,30 @@ namespace rmw_int2dds_cpp
 namespace
 {
 
-bool is_byte_array_type(uint8_t type_id)
+// Byte width of a fixed-size primitive whose array body can be bulk-copied, or 0 for
+// types needing per-element handling. The C and C++ introspection ids share values.
+size_t fixed_primitive_size(uint8_t type_id)
 {
-  return type_id == rosidl_typesupport_introspection_c__ROS_TYPE_BYTE ||
-         type_id == rosidl_typesupport_introspection_c__ROS_TYPE_UINT8;
+  switch (type_id) {
+    case rosidl_typesupport_introspection_c__ROS_TYPE_BYTE:
+    case rosidl_typesupport_introspection_c__ROS_TYPE_UINT8:
+    case rosidl_typesupport_introspection_c__ROS_TYPE_CHAR:
+    case rosidl_typesupport_introspection_c__ROS_TYPE_INT8:
+      return 1;
+    case rosidl_typesupport_introspection_c__ROS_TYPE_INT16:
+    case rosidl_typesupport_introspection_c__ROS_TYPE_UINT16:
+      return 2;
+    case rosidl_typesupport_introspection_c__ROS_TYPE_INT32:
+    case rosidl_typesupport_introspection_c__ROS_TYPE_UINT32:
+    case rosidl_typesupport_introspection_c__ROS_TYPE_FLOAT:
+      return 4;
+    case rosidl_typesupport_introspection_c__ROS_TYPE_INT64:
+    case rosidl_typesupport_introspection_c__ROS_TYPE_UINT64:
+    case rosidl_typesupport_introspection_c__ROS_TYPE_DOUBLE:
+      return 8;
+    default:
+      return 0;
+  }
 }
 
 }  // namespace
@@ -282,19 +302,22 @@ bool CdrSerializer::serialize_member_c(
       serialize_uint32(static_cast<uint32_t>(array_size));
     }
 
-    if (is_byte_array_type(member->type_id_)) {
+    const size_t element_size = fixed_primitive_size(member->type_id_);
+    if (element_size != 0) {
       if (array_size == 0) {
         return true;
       }
-      if (member->get_const_function == nullptr) {
-        return false;
+      const void * first_element = member->get_const_function != nullptr ?
+        member->get_const_function(collection_data, 0) : nullptr;
+      if (first_element != nullptr) {
+        align(element_size);
+        serialize_raw(first_element, array_size * element_size);
+        return true;
       }
-      const void * first_element = member->get_const_function(collection_data, 0);
-      if (first_element == nullptr) {
-        return false;
-      }
-      serialize_raw(first_element, array_size);
-      return true;
+      // For a fixed primitive the per-element loop below dereferences the accessor
+      // result directly (no fetch fallback here); a null first element cannot be
+      // bulk-copied and would be dereferenced as null, so fail cleanly instead.
+      return false;
     }
 
     // Serialize each element
@@ -461,19 +484,18 @@ bool CdrSerializer::serialize_member_cpp(
       serialize_uint32(static_cast<uint32_t>(array_size));
     }
 
-    if (is_byte_array_type(member->type_id_)) {
+    const size_t element_size = fixed_primitive_size(member->type_id_);
+    if (element_size != 0) {
       if (array_size == 0) {
         return true;
       }
-      if (member->get_const_function == nullptr) {
-        return false;
+      const void * first_element = member->get_const_function != nullptr ?
+        member->get_const_function(member_data, 0) : nullptr;
+      if (first_element != nullptr) {
+        align(element_size);
+        serialize_raw(first_element, array_size * element_size);
+        return true;
       }
-      const void * first_element = member->get_const_function(member_data, 0);
-      if (first_element == nullptr) {
-        return false;
-      }
-      serialize_raw(first_element, array_size);
-      return true;
     }
 
     for (size_t i = 0; i < array_size; ++i) {
@@ -955,18 +977,17 @@ bool CdrDeserializer::deserialize_member_c(
       }
     }
 
-    if (is_byte_array_type(member->type_id_)) {
+    const size_t element_size = fixed_primitive_size(member->type_id_);
+    if (element_size != 0) {
       if (array_size == 0) {
         return true;
       }
-      if (member->get_function == nullptr) {
-        return false;
+      void * first_element = member->get_function != nullptr ?
+        member->get_function(collection_data, 0) : nullptr;
+      if (first_element != nullptr) {
+        align(element_size);
+        return deserialize_raw(first_element, array_size * element_size);
       }
-      void * first_element = member->get_function(collection_data, 0);
-      if (first_element == nullptr) {
-        return false;
-      }
-      return deserialize_raw(first_element, array_size);
     }
 
     for (size_t i = 0; i < array_size; ++i) {
@@ -1140,18 +1161,17 @@ bool CdrDeserializer::deserialize_member_cpp(
       }
     }
 
-    if (is_byte_array_type(member->type_id_)) {
+    const size_t element_size = fixed_primitive_size(member->type_id_);
+    if (element_size != 0) {
       if (array_size == 0) {
         return true;
       }
-      if (member->get_function == nullptr) {
-        return false;
+      void * first_element = member->get_function != nullptr ?
+        member->get_function(member_data, 0) : nullptr;
+      if (first_element != nullptr) {
+        align(element_size);
+        return deserialize_raw(first_element, array_size * element_size);
       }
-      void * first_element = member->get_function(member_data, 0);
-      if (first_element == nullptr) {
-        return false;
-      }
-      return deserialize_raw(first_element, array_size);
     }
 
     for (size_t i = 0; i < array_size; ++i) {
