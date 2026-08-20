@@ -313,6 +313,8 @@ struct ServiceData
   // DataReader listener on the request reader.
   std::mutex listener_mutex;
   CallbackSlot new_request_slot;
+  std::mutex request_take_mutex;
+  std::mutex response_write_mutex;
 };
 
 /// Client implementation data
@@ -343,6 +345,7 @@ struct ClientData
   // the executor resolves by taking nothing.
   std::mutex listener_mutex;
   CallbackSlot new_response_slot;
+  std::mutex response_take_mutex;
 };
 
 /// Event implementation data

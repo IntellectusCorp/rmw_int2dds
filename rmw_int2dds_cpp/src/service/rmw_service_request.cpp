@@ -28,6 +28,7 @@
 
 #include "int2dds-ffi.h"  // NOLINT(build/include_subdir): vendored FFI header
 #include "rmw_int2dds_cpp/identifier.hpp"
+#include <mutex>
 #include "rmw_int2dds_cpp/types.hpp"
 #include "rmw_int2dds_cpp/cdr_serializer.hpp"
 #include "../common/take_with_info.hpp"  // NOLINT(build/include_subdir)
@@ -125,6 +126,7 @@ rmw_take_request(
   Int2DdsSampleInfo sample_info;
 
   // Take request from DDS together with its SampleInfo
+  std::lock_guard<std::mutex> take_lk(srv_data->request_take_mutex);
   Int2DdsRet ret = rmw_int2dds_cpp::take_one_serialized_with_info(
     srv_data->request_reader,
     buffer,
@@ -264,6 +266,7 @@ rmw_send_response(
   }
 
   // Send response
+  std::lock_guard<std::mutex> write_lk(srv_data->response_write_mutex);
   Int2DdsRet ret = int2dds_datawriter_write_serialized(
     srv_data->response_writer,
     send_buffer.data(),
