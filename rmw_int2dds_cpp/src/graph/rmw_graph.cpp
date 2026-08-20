@@ -115,6 +115,11 @@ static std::string demangle_dds_service_type_name(const std::string & type_name)
 
 constexpr std::chrono::milliseconds kGraphSnapshotTimeout{50};
 
+// How often the listener worker sweeps the whole cache to heal drift. The push callback can miss a
+// dispose, and graph queries are pure cache lookups, so without this a departed endpoint would
+// linger indefinitely. See graph_listener_worker.
+constexpr std::chrono::milliseconds kGraphReconcileInterval{2000};
+
 static bool is_service_request_topic(const std::string & topic_name)
 {
   return topic_name.compare(0, 2, "rq") == 0 && topic_name.find("Request") != std::string::npos;
@@ -675,11 +680,15 @@ static void graph_listener_worker(rmw_int2dds_cpp::ContextData * context_data)
   if (st == nullptr) {
     return;
   }
+  auto last_reconcile = std::chrono::steady_clock::now();
   for (;; ) {
     std::deque<rmw_int2dds_cpp::GraphEvent> batch;
     {
       std::unique_lock<std::mutex> lk(st->qmutex);
-      st->qcv.wait(lk, [st] {return !st->running || !st->queue.empty();});
+      // Wake on an event or shutdown, or when the reconcile interval expires with an empty queue,
+      // so the periodic sweep below still runs while the graph is idle.
+      st->qcv.wait_for(
+        lk, kGraphReconcileInterval, [st] {return !st->running || !st->queue.empty();});
       if (!st->running && st->queue.empty()) {
         return;
       }
@@ -688,29 +697,43 @@ static void graph_listener_worker(rmw_int2dds_cpp::ContextData * context_data)
     if (!context_data->common) {
       continue;
     }
-    std::lock_guard<std::mutex> glock(context_data->common->node_update_mutex);
-    auto & synced = context_data->synced_remote_entities;
-    for (auto & ev : batch) {
-      if (ev.is_alive) {
-        if (synced.find(ev.key) != synced.end()) {
-          continue;
-        }
-        rmw_gid_t gid = {};
-        std::memcpy(gid.data, ev.key.data(), RMW_GID_STORAGE_SIZE);
-        rmw_gid_t participant_gid = {};
-        std::memcpy(participant_gid.data, ev.participant_key.data(), ev.participant_key.size());
-        context_data->common->graph_cache.add_entity(
-          gid, ev.topic_name, ev.type_name, participant_gid, ev.qos, ev.is_reader);
-        synced[ev.key] = ev.is_reader;
-      } else {
-        auto it = synced.find(ev.key);
-        if (it != synced.end()) {
+    {
+      std::lock_guard<std::mutex> glock(context_data->common->node_update_mutex);
+      auto & synced = context_data->synced_remote_entities;
+      for (auto & ev : batch) {
+        if (ev.is_alive) {
+          if (synced.find(ev.key) != synced.end()) {
+            continue;
+          }
           rmw_gid_t gid = {};
           std::memcpy(gid.data, ev.key.data(), RMW_GID_STORAGE_SIZE);
-          context_data->common->graph_cache.remove_entity(gid, it->second);
-          synced.erase(it);
+          rmw_gid_t participant_gid = {};
+          std::memcpy(participant_gid.data, ev.participant_key.data(), ev.participant_key.size());
+          context_data->common->graph_cache.add_entity(
+            gid, ev.topic_name, ev.type_name, participant_gid, ev.qos, ev.is_reader);
+          synced[ev.key] = ev.is_reader;
+        } else {
+          auto it = synced.find(ev.key);
+          if (it != synced.end()) {
+            rmw_gid_t gid = {};
+            std::memcpy(gid.data, ev.key.data(), RMW_GID_STORAGE_SIZE);
+            context_data->common->graph_cache.remove_entity(gid, it->second);
+            synced.erase(it);
+          }
         }
       }
+    }
+    // The push callback can miss a dispose (raced with the init-time bootstrap, or coalesced
+    // during a discovery burst), and graph queries are pure cache lookups, so a departed endpoint
+    // would otherwise stay in the cache forever. sync_remote_entities_to_common() re-adds live
+    // endpoints and removes departed ones via the dispose-instance poll -- the same authoritative
+    // sweep the pre-listener code ran on every query. Running it here on a low-frequency timer
+    // heals that drift while queries stay pure lookups. It takes node_update_mutex itself, so it
+    // must run after the batch lock above is released.
+    const auto now = std::chrono::steady_clock::now();
+    if (now - last_reconcile >= kGraphReconcileInterval) {
+      sync_remote_entities_to_common(context_data);
+      last_reconcile = now;
     }
   }
 }
