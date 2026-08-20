@@ -69,11 +69,9 @@ apt-get install -y "${OUT}"/ros-"${ROS_DISTRO}"-int2dds-ffi-vendor_*.deb
 echo "::endgroup::"
 
 echo "::group::build rmw deb"
-# Skip these keys at rosdep-install time:
+# Skip this key at rosdep-install time:
 #  - int2dds_ffi_vendor: already installed above as a local .deb (not in any apt repo)
-#  - test_rmw_implementation: a test_depend; binary deb builds do not run tests, and
-#    it is resolved for control generation via the local rosdep map.
-build_pkg "${RMW_SRC}" "int2dds_ffi_vendor test_rmw_implementation"
+build_pkg "${RMW_SRC}" "int2dds_ffi_vendor"
 echo "::endgroup::"
 
 echo "Artifacts in ${OUT}:"

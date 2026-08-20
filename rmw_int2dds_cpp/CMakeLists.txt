@@ -37,9 +37,19 @@ find_package(rosidl_typesupport_introspection_cpp REQUIRED)
 find_package(rosidl_typesupport_c REQUIRED)
 find_package(rosidl_typesupport_cpp REQUIRED)
 find_package(rmw_dds_common REQUIRED)
-find_package(rclcpp REQUIRED)
 find_package(std_msgs REQUIRED)
-find_package(rcl QUIET)
+
+# NOTE: rclcpp and rcl are deliberately absent from this package. They sit ABOVE
+# it in the ROS 2 stack:
+#
+#   rclcpp -> rcl -> rmw_implementation -> rmw_int2dds_cpp
+#                    (via the rmw_implementation_packages group)
+#
+# Depending on either would close a build dependency cycle and drag the whole
+# client library stack into an RMW plugin. No upstream RMW implementation does
+# it (rmw_fastrtps, rmw_cyclonedds, rmw_connextdds, rmw_zenoh: zero references).
+# The rclcpp-based QoS/perf probes live in the sibling rmw_int2dds_validation
+# package instead, mirroring test_rmw_zenoh_cpp in ros2/rmw_zenoh.
 
 # ============================================================================
 # int2dds-ffi library
@@ -157,17 +167,8 @@ add_executable(test_connection test/test_connection.cpp)
 target_include_directories(test_connection PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(test_connection int2dds_ffi::int2dds_ffi ${PLATFORM_LIBS})
 
-# D4: batch take_sequence functional check.
-if(rcl_FOUND)
-  add_executable(test_take_sequence test/test_take_sequence.cpp)
-  target_include_directories(test_take_sequence PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
-  target_link_libraries(test_take_sequence
-    rclcpp::rclcpp
-    rcl::rcl
-    ${std_msgs_TARGETS}
-    rmw_int2dds_cpp
-  )
-endif()
+# D4: the batch take_sequence functional check needs rclcpp and rcl, so it lives
+# in the rmw_int2dds_validation package.
 
 if(RMW_INT2DDS_BUILD_MATCHED_EVENT_TESTS)
   add_executable(test_event_smoke test/test_event_smoke.cpp)
@@ -186,142 +187,16 @@ if(RMW_INT2DDS_BUILD_EVENT_VALIDATION)
   add_executable(test_event_validation test/test_event_validation.cpp)
   target_include_directories(test_event_validation PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
   target_link_libraries(test_event_validation rmw_int2dds_cpp int2dds_ffi::int2dds_ffi ${PLATFORM_LIBS})
+  # test_event_validation.cpp drives the rmw C API directly - it includes no
+  # rclcpp header, so rclcpp was never a real dependency of this target.
   ament_target_dependencies(test_event_validation
     rcutils
     rmw
-    rclcpp
     rosidl_runtime_cpp
     rosidl_typesupport_cpp
     std_msgs
   )
 endif()
-
-add_executable(qos_durability_sub_cpp validation/qos/durability/rclcpp/qos_durability_sub.cpp)
-target_include_directories(qos_durability_sub_cpp PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
-ament_target_dependencies(qos_durability_sub_cpp
-  rclcpp
-  std_msgs
-)
-
-add_executable(qos_durability_pub_cpp validation/qos/durability/rclcpp/qos_durability_pub.cpp)
-target_include_directories(qos_durability_pub_cpp PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
-ament_target_dependencies(qos_durability_pub_cpp
-  rclcpp
-  std_msgs
-)
-
-add_executable(qos_history_depth_sub_cpp validation/qos/history_depth/rclcpp/qos_history_depth_sub.cpp)
-target_include_directories(qos_history_depth_sub_cpp PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
-ament_target_dependencies(qos_history_depth_sub_cpp
-  rclcpp
-  std_msgs
-)
-
-add_executable(qos_history_depth_pub_cpp validation/qos/history_depth/rclcpp/qos_history_depth_pub.cpp)
-target_include_directories(qos_history_depth_pub_cpp PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
-ament_target_dependencies(qos_history_depth_pub_cpp
-  rclcpp
-  std_msgs
-)
-
-add_executable(qos_deadline_sub_cpp validation/qos/deadline/rclcpp/qos_deadline_sub.cpp)
-target_include_directories(qos_deadline_sub_cpp PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
-ament_target_dependencies(qos_deadline_sub_cpp
-  rclcpp
-  std_msgs
-)
-
-add_executable(qos_deadline_pub_cpp validation/qos/deadline/rclcpp/qos_deadline_pub.cpp)
-target_include_directories(qos_deadline_pub_cpp PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
-ament_target_dependencies(qos_deadline_pub_cpp
-  rclcpp
-  std_msgs
-)
-
-add_executable(qos_liveliness_sub_cpp validation/qos/liveliness/rclcpp/qos_liveliness_sub.cpp)
-target_include_directories(qos_liveliness_sub_cpp PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
-ament_target_dependencies(qos_liveliness_sub_cpp
-  rclcpp
-  std_msgs
-)
-
-add_executable(qos_liveliness_pub_cpp validation/qos/liveliness/rclcpp/qos_liveliness_pub.cpp)
-target_include_directories(qos_liveliness_pub_cpp PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
-ament_target_dependencies(qos_liveliness_pub_cpp
-  rclcpp
-  std_msgs
-)
-
-add_executable(qos_lifespan_sub_cpp validation/qos/lifespan/rclcpp/qos_lifespan_sub.cpp)
-target_include_directories(qos_lifespan_sub_cpp PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
-ament_target_dependencies(qos_lifespan_sub_cpp
-  rclcpp
-  std_msgs
-)
-
-add_executable(qos_lifespan_pub_cpp validation/qos/lifespan/rclcpp/qos_lifespan_pub.cpp)
-target_include_directories(qos_lifespan_pub_cpp PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
-ament_target_dependencies(qos_lifespan_pub_cpp
-  rclcpp
-  std_msgs
-)
-
-add_executable(content_filter_lifecycle_check_cpp
-  validation/cft/rclcpp/content_filter_lifecycle_check.cpp)
-target_include_directories(content_filter_lifecycle_check_cpp PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
-ament_target_dependencies(content_filter_lifecycle_check_cpp
-  rclcpp
-  std_msgs
-)
-
-add_executable(callback_executor_smoke_cpp
-  validation/callback/rclcpp/callback_executor_smoke.cpp)
-target_include_directories(callback_executor_smoke_cpp PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
-ament_target_dependencies(callback_executor_smoke_cpp
-  rclcpp
-)
-
-add_executable(perf_latency_pub_cpp validation/perf/rclcpp/perf_latency_pub_cpp.cpp)
-target_include_directories(perf_latency_pub_cpp PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
-ament_target_dependencies(perf_latency_pub_cpp
-  rclcpp
-  std_msgs
-)
-
-add_executable(perf_latency_sub_cpp validation/perf/rclcpp/perf_latency_sub_cpp.cpp)
-target_include_directories(perf_latency_sub_cpp PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
-ament_target_dependencies(perf_latency_sub_cpp
-  rclcpp
-  std_msgs
-)
-
-add_executable(perf_throughput_pub_cpp validation/perf/rclcpp/perf_throughput_pub_cpp.cpp)
-target_include_directories(perf_throughput_pub_cpp PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
-ament_target_dependencies(perf_throughput_pub_cpp
-  rclcpp
-  std_msgs
-)
-
-add_executable(perf_throughput_sub_cpp validation/perf/rclcpp/perf_throughput_sub_cpp.cpp)
-target_include_directories(perf_throughput_sub_cpp PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
-ament_target_dependencies(perf_throughput_sub_cpp
-  rclcpp
-  std_msgs
-)
-
-add_executable(perf_readiness_pub_cpp validation/perf/rclcpp/perf_readiness_pub_cpp.cpp)
-target_include_directories(perf_readiness_pub_cpp PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
-ament_target_dependencies(perf_readiness_pub_cpp
-  rclcpp
-  std_msgs
-)
-
-add_executable(perf_readiness_sub_cpp validation/perf/rclcpp/perf_readiness_sub_cpp.cpp)
-target_include_directories(perf_readiness_sub_cpp PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
-ament_target_dependencies(perf_readiness_sub_cpp
-  rclcpp
-  std_msgs
-)
 
 # ============================================================================
 # Installation
@@ -353,78 +228,6 @@ if(RMW_INT2DDS_BUILD_EVENT_VALIDATION)
   )
 endif()
 
-install(TARGETS qos_durability_sub_cpp
-  RUNTIME DESTINATION lib/${PROJECT_NAME}
-)
-
-install(TARGETS qos_durability_pub_cpp
-  RUNTIME DESTINATION lib/${PROJECT_NAME}
-)
-
-install(TARGETS qos_history_depth_sub_cpp
-  RUNTIME DESTINATION lib/${PROJECT_NAME}
-)
-
-install(TARGETS qos_history_depth_pub_cpp
-  RUNTIME DESTINATION lib/${PROJECT_NAME}
-)
-
-install(TARGETS qos_deadline_sub_cpp
-  RUNTIME DESTINATION lib/${PROJECT_NAME}
-)
-
-install(TARGETS qos_deadline_pub_cpp
-  RUNTIME DESTINATION lib/${PROJECT_NAME}
-)
-
-install(TARGETS qos_liveliness_sub_cpp
-  RUNTIME DESTINATION lib/${PROJECT_NAME}
-)
-
-install(TARGETS qos_liveliness_pub_cpp
-  RUNTIME DESTINATION lib/${PROJECT_NAME}
-)
-
-install(TARGETS qos_lifespan_sub_cpp
-  RUNTIME DESTINATION lib/${PROJECT_NAME}
-)
-
-install(TARGETS qos_lifespan_pub_cpp
-  RUNTIME DESTINATION lib/${PROJECT_NAME}
-)
-
-install(TARGETS content_filter_lifecycle_check_cpp
-  RUNTIME DESTINATION lib/${PROJECT_NAME}
-)
-
-install(TARGETS callback_executor_smoke_cpp
-  RUNTIME DESTINATION lib/${PROJECT_NAME}
-)
-
-install(TARGETS perf_latency_pub_cpp
-  RUNTIME DESTINATION lib/${PROJECT_NAME}
-)
-
-install(TARGETS perf_latency_sub_cpp
-  RUNTIME DESTINATION lib/${PROJECT_NAME}
-)
-
-install(TARGETS perf_throughput_pub_cpp
-  RUNTIME DESTINATION lib/${PROJECT_NAME}
-)
-
-install(TARGETS perf_throughput_sub_cpp
-  RUNTIME DESTINATION lib/${PROJECT_NAME}
-)
-
-install(TARGETS perf_readiness_pub_cpp
-  RUNTIME DESTINATION lib/${PROJECT_NAME}
-)
-
-install(TARGETS perf_readiness_sub_cpp
-  RUNTIME DESTINATION lib/${PROJECT_NAME}
-)
-
 # The int2dds FFI runtime library is installed by the int2dds_ffi_vendor
 # package. On Windows, copy the DLL next to the freshly built binaries so the
 # development/test executables can locate it at runtime.
@@ -451,7 +254,6 @@ if(BUILD_TESTING)
     "${CMAKE_CURRENT_SOURCE_DIR}/doc/*"
     "${CMAKE_CURRENT_SOURCE_DIR}/examples/*"
     "${CMAKE_CURRENT_SOURCE_DIR}/ros2_documentation_pr/*"
-    "${CMAKE_CURRENT_SOURCE_DIR}/validation/*"
   )
   list(APPEND RMW_INT2DDS_LINT_EXCLUDE_FILES
     "${CMAKE_CURRENT_SOURCE_DIR}/CHANGELOG.rst"
