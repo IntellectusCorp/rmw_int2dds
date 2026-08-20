@@ -44,10 +44,11 @@ jobs:
 
       # No QEMU setup: each arch builds/verifies its own native platform on a
       # matching runner, so docker --platform runs natively (no emulation).
+      # No INT2DDS_FFI_TOKEN: the vendor package fetches the release asset with an
+      # unauthenticated CMake file(DOWNLOAD). The secret was only needed for the
+      # private sibling checkout that this repository no longer performs.
       - name: Build debs
         working-directory: rmw_int2dds
-        env:
-          INT2DDS_FFI_TOKEN: ${{ secrets.INT2DDS_FFI_TOKEN }}
         run: bash ./packaging/build-deb.sh "${ROS_DISTRO}" "${{ matrix.arch }}"
 
       - name: Verify debs

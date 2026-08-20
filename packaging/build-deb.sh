@@ -35,7 +35,6 @@ docker run --privileged --rm tonistiigi/binfmt --install all >/dev/null 2>&1 || 
 docker run --rm --platform "${PLATFORM}" \
   -e ROS_DISTRO="${DISTRO}" \
   -e RMW_REPO=/ws/rmw_int2dds \
-  -e INT2DDS_FFI_TOKEN="${INT2DDS_FFI_TOKEN:-}" \
   -v "${REPO_ROOT}":/ws/rmw_int2dds \
   "ros:${DISTRO}-ros-base" \
   bash /ws/rmw_int2dds/packaging/in-container-build.sh

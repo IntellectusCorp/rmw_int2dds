@@ -1,4 +1,8 @@
-# Build + test across supported ROS 2 distributions.
+# Build + test the int2DDS RMW stack (this branch = humble). Each version branch
+# (jazzy/humble/rolling) carries its own copy of this workflow pinned to that
+# branch's distro, the same convention package-deb.yml and lint.yml follow: the
+# branches carry distro-specific sources, so building one branch against another
+# distro would either fail or give false confidence.
 #
 # rmw_int2dds_cpp links against the int2DDS FFI library (libint2dds_ffi.so +
 # int2dds-ffi.h). That library is not committed here: the int2dds_ffi_vendor
@@ -11,24 +15,18 @@ name: build
 
 on:
   push:
-    branches: [main]
+    branches: [humble]
   pull_request:
+    branches: [humble]
   workflow_dispatch:
 
 jobs:
   build-test:
     runs-on: ubuntu-22.04
-    strategy:
-      fail-fast: false
-      matrix:
-        ros_distribution: [humble, jazzy]
-        include:
-          - ros_distribution: humble
-            container: ros:humble-ros-base
-          - ros_distribution: jazzy
-            container: ros:jazzy-ros-base
+    # The image exports ROS_DISTRO=humble, which rmw_int2dds_cpp/CMakeLists.txt
+    # reads to keep the matched-event smoke target off on Humble.
     container:
-      image: ${{ matrix.container }}
+      image: ros:humble-ros-base
     steps:
       - uses: actions/checkout@v4
 
@@ -36,12 +34,12 @@ jobs:
         uses: ros-tooling/action-ros-ci@master
         with:
           package-name: int2dds_ffi_vendor rmw_int2dds_cpp
-          target-ros2-distro: ${{ matrix.ros_distribution }}
+          target-ros2-distro: humble
 
       - name: Upload test results
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: test-results-${{ matrix.ros_distribution }}
+          name: test-results-humble
           path: ros_ws/build/rmw_int2dds_cpp/test_results/
           if-no-files-found: ignore
