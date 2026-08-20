@@ -29,11 +29,17 @@
   <depend>rosidl_runtime_c</depend>
   <depend>rosidl_runtime_cpp</depend>
 
-  <!-- Type support packages (introspection-based) -->
+  <!-- Type support packages. The introspection ones carry the type support this
+       RMW consumes; rosidl_typesupport_c/cpp provide the dispatch layer that
+       CMakeLists.txt find_package()es directly. Those two currently arrive anyway
+       as apt dependencies of std_msgs, but leaning on that is exactly how the ROS
+       build farm breaks - it installs only what is declared here. -->
   <depend>rosidl_typesupport_introspection_c</depend>
   <depend>rosidl_typesupport_introspection_cpp</depend>
+  <depend>rosidl_typesupport_c</depend>
+  <depend>rosidl_typesupport_cpp</depend>
 
-  <!-- Used by the in-repo validation/probe executables -->
+  <!-- Message type used by the event smoke/validation executables under test/ -->
   <depend>std_msgs</depend>
 
   <!-- Prebuilt int2DDS FFI library (downloaded + exported by the vendor pkg).
@@ -43,9 +49,14 @@
        pinned in one place: INT2DDS_FFI_VERSION in int2dds_ffi_vendor/CMakeLists.txt. -->
   <depend>int2dds_ffi_vendor</depend>
 
-  <!-- Lint / test -->
+  <!-- Lint / test. ament_cmake_cpplint and ament_cmake_flake8 come along with
+       ament_lint_common, but CMakeLists.txt find_package()es them directly in
+       order to call ament_cpplint()/ament_flake8() with explicit paths, so they
+       are declared rather than assumed. -->
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend>
+  <test_depend>ament_cmake_cpplint</test_depend>
+  <test_depend>ament_cmake_flake8</test_depend>
   <test_depend>ament_cmake_gtest</test_depend>
   <test_depend>test_msgs</test_depend>
 
