@@ -48,7 +48,6 @@
   <test_depend>ament_lint_common</test_depend>
   <test_depend>ament_cmake_gtest</test_depend>
   <test_depend>test_msgs</test_depend>
-  <test_depend>test_rmw_implementation</test_depend>
 
   <!-- Mark this package as an RMW implementation so rmw_implementation builds it -->
   <member_of_group>rmw_implementation_packages</member_of_group>
