@@ -1,0 +1,57 @@
+# Build + test the int2DDS RMW stack (this branch = humble). Each version branch
+# (jazzy/humble/rolling) carries its own copy of this workflow pinned to that
+# branch's distro, the same convention package-deb.yml and lint.yml follow: the
+# branches carry distro-specific sources, so building one branch against another
+# distro would either fail or give false confidence.
+#
+# rmw_int2dds_cpp links against the int2DDS FFI library (libint2dds_ffi.so +
+# int2dds-ffi.h). That library is not committed here: the int2dds_ffi_vendor
+# package in this repository downloads the prebuilt tarball from
+# https://github.com/IntellectusCorp/int2dds_ffi_vendor/releases at CMake
+# configure time and verifies it against the sha256 in the bundled manifest.
+# Building int2dds_ffi_vendor before rmw_int2dds_cpp is therefore all CI needs,
+# and it requires outbound network access to github.com.
+name: build
+
+on:
+  push:
+    branches: [humble]
+  pull_request:
+    branches: [humble]
+  workflow_dispatch:
+
+jobs:
+  build-test:
+    runs-on: ubuntu-22.04
+    # The image exports ROS_DISTRO=humble, which rmw_int2dds_cpp/CMakeLists.txt
+    # reads to keep the matched-event smoke target off on Humble.
+    container:
+      image: ros:humble-ros-base
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build and test
+        uses: ros-tooling/action-ros-ci@master
+        with:
+          package-name: int2dds_ffi_vendor rmw_int2dds_cpp
+          target-ros2-distro: humble
+          # The action runs `colcon lcov-result` / `colcon coveragepy-result`
+          # after the build, but colcon-lcov-result and colcon-coveragepy-result
+          # are not part of the ros:humble-ros-base image, so those verbs abort
+          # the step with exit 2 even when the build and every test pass. No
+          # coverage target is tracked for this package (see
+          # QUALITY_DECLARATION.md), so skip the coverage stage entirely rather
+          # than install two extensions whose output nothing consumes.
+          coverage-result: false
+          # test_rmw_implementation is declared as a test dependency but has no
+          # binary package on Humble, so rosdep cannot resolve it. It is only
+          # needed when running the upstream conformance suite from source.
+          rosdep-skip-keys: test_rmw_implementation
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-humble
+          path: ros_ws/build/rmw_int2dds_cpp/test_results/
+          if-no-files-found: ignore

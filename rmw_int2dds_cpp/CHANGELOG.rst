@@ -25,6 +25,11 @@ Forthcoming
 * Add ``test_rmw_wait_guards``, the first automated test registered with CTest:
   guard condition readiness, trigger consumption, timeout handling and wake-up
   from another thread, all without a DDS participant.
+* Move the ``int2dds_ffi_vendor`` package into this repository. Building from
+  source no longer needs a second clone, and the dependency is declared without
+  a version range because the two packages are now released in lockstep; the
+  prebuilt FFI version stays pinned in one place, ``INT2DDS_FFI_VERSION`` in
+  ``int2dds_ffi_vendor/CMakeLists.txt``.
 * Cache wait set attachments across ``rmw_wait`` calls, rebuild them by delta
   instead of a full reset, and skip the event status mask update when it is
   already set.
