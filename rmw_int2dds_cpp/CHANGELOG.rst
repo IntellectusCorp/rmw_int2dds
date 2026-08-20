@@ -25,6 +25,28 @@ Forthcoming
 * Add ``test_rmw_wait_guards``, the first automated test registered with CTest:
   guard condition readiness, trigger consumption, timeout handling and wake-up
   from another thread, all without a DDS participant.
+* Cache wait set attachments across ``rmw_wait`` calls, rebuild them by delta
+  instead of a full reset, and skip the event status mask update when it is
+  already set.
+* Harden the persistent attachment cache against teardown and concurrency:
+  detach attachments before removing the wait set from the registry, keep the
+  registry valid during static destruction, make the registry insert
+  exception-safe, clean caches and delete the status condition on the detached
+  service/client destroy path, clean caches before freeing the context guard,
+  re-flag an entity for re-attach when its reader or event status condition is
+  momentarily null, and close the destroy-vs-cache race in the attachments.
+* Serialize the concurrent service RPC paths under a multi-threaded executor:
+  guard the response writer in ``rmw_send_response`` and the request/response
+  readers in ``rmw_take_request`` / ``rmw_take_response`` per entity, fixing an
+  intermittent service round-trip hang.
+* Build the graph cache from SEDP endpoint-discovery push callbacks, remove
+  graph entities on the dispose signal instead of on absence from a snapshot,
+  and identify the local participant by its own key.
+* Default ``INT2DDS_DATA_FRAG_SIZE`` to 1344 and ``INT2DDS_MAX_MESSAGE_SIZE`` to
+  13440 in ``rmw_init``, and document the loopback discovery env vars in the
+  usage table.
+* Drop key/key_len from serialized write calls and bulk-copy fixed-width
+  primitive arrays in the CDR codec.
 * Contributors: Intellectus Corp.
 
 0.0.1 (2026-06-25)
