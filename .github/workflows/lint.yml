@@ -6,12 +6,15 @@
 # ament_uncrustify, ament_cppcheck) are NOT run here. action-ros-lint does not
 # support them, and they are build-coupled, so they run inside `colcon test`
 # (via ament_lint_common) in build.yml instead. Do not duplicate them here.
+#
+# Pinned to this branch's distro (humble), like build.yml and package-deb.yml.
 name: lint
 
 on:
   push:
-    branches: [main]
+    branches: [humble]
   pull_request:
+    branches: [humble]
   workflow_dispatch:
 
 jobs:
@@ -31,4 +34,6 @@ jobs:
         with:
           linter: ${{ matrix.linter }}
           distribution: humble
-          package-name: rmw_int2dds_cpp
+          # Every package in this repository. action-ros-lint takes a
+          # whitespace-separated list, same as build.yml.
+          package-name: int2dds_ffi_vendor rmw_int2dds_cpp rmw_int2dds_validation

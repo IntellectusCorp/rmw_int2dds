@@ -1,0 +1,52 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>rmw_int2dds_validation</name>
+  <version>0.1.0</version>
+  <description>
+    rclcpp and rclpy validation probes for the int2DDS RMW implementation:
+    QoS behaviour checks (durability, history depth, deadline, liveliness,
+    lifespan), content-filtered topic lifecycle, executor callback smoke checks
+    and latency/throughput/readiness measurements.
+
+    These live outside rmw_int2dds_cpp on purpose. rclcpp sits above the RMW
+    layer (rclcpp -&gt; rcl -&gt; rmw_implementation -&gt; rmw_int2dds_cpp through the
+    rmw_implementation_packages group), so an RMW implementation that depended
+    on rclcpp would close a build dependency cycle. No upstream RMW does it;
+    ros2/rmw_zenoh keeps its rclcpp-based checks in test_rmw_zenoh_cpp for the
+    same reason.
+  </description>
+
+  <maintainer email="int2dds@int2.us">Jungsup Lee</maintainer>
+
+  <license>Apache-2.0</license>
+
+  <url type="repository">https://github.com/IntellectusCorp/rmw_int2dds</url>
+  <url type="bugtracker">https://github.com/IntellectusCorp/rmw_int2dds/issues</url>
+  <url type="website">https://github.com/IntellectusCorp/int2DDS</url>
+
+  <author email="int2dds@int2.us">Intellectus Corp.</author>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <!-- The probes are ordinary rclcpp nodes; test_take_sequence additionally
+       drives the rcl/rmw C APIs directly. -->
+  <depend>rclcpp</depend>
+  <depend>rcl</depend>
+  <depend>rmw</depend>
+  <depend>rcutils</depend>
+  <depend>std_msgs</depend>
+
+  <!-- test_take_sequence links the middleware directly instead of going through
+       rmw_implementation, so this is a build dependency rather than exec-only.
+       Nothing here includes rmw_int2dds_cpp private headers. -->
+  <depend>rmw_int2dds_cpp</depend>
+
+  <!-- The rclpy probes under validation/**/rclpy/ are run with `python3`, not
+       installed as entry points, so rclpy is only needed at runtime. -->
+  <exec_depend>rclpy</exec_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

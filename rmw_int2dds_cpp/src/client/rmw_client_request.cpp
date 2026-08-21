@@ -28,6 +28,7 @@
 
 #include "int2dds-ffi.h"  // NOLINT(build/include_subdir): vendored FFI header
 #include "rmw_int2dds_cpp/identifier.hpp"
+#include <mutex>
 #include "rmw_int2dds_cpp/types.hpp"
 #include "rmw_int2dds_cpp/cdr_serializer.hpp"
 #include "../common/take_with_info.hpp"  // NOLINT(build/include_subdir)
@@ -232,6 +233,7 @@ rmw_take_response(
   size_t payload_size = 0;
   Int2DdsSampleInfo sample_info;
 
+  std::lock_guard<std::mutex> take_lk(cli_data->response_take_mutex);
   while (true) {
     size_t data_size = 0;
     bool valid_data = false;

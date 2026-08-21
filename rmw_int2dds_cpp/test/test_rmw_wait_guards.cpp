@@ -114,6 +114,56 @@ protected:
     return handles_[index] != nullptr;
   }
 
+  /// Block in rmw_wait until another thread triggers the first guard.
+  ///
+  /// A second guard acts as a watchdog escape: if the wait does not wake, the
+  /// watchdog triggers it so the call returns and the test fails on an
+  /// assertion instead of hanging the whole binary. rmw_trigger_guard_condition
+  /// is warn_unused_result and a gtest assertion raised on a spawned thread
+  /// cannot abort the test, so both return codes are recorded and asserted on
+  /// the main thread after the joins.
+  void expect_wakes_on_cross_thread_trigger(const rmw_time_t * timeout)
+  {
+    rmw_guard_condition_t * target = add_guard();
+    rmw_guard_condition_t * rescue = add_guard();
+
+    std::atomic<bool> watchdog_fired{false};
+    std::atomic<bool> wait_returned{false};
+    std::atomic<rmw_ret_t> trigger_ret{RMW_RET_OK};
+    std::atomic<rmw_ret_t> rescue_ret{RMW_RET_OK};
+
+    std::thread trigger_thread(
+      [target, &trigger_ret]() {
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        trigger_ret.store(rmw_trigger_guard_condition(target));
+      });
+
+    std::thread watchdog(
+      [rescue, &watchdog_fired, &wait_returned, &rescue_ret]() {
+        const auto deadline = std::chrono::steady_clock::now() + kWatchdogTimeout;
+        while (!wait_returned.load() && std::chrono::steady_clock::now() < deadline) {
+          std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+        if (!wait_returned.load()) {
+          watchdog_fired.store(true);
+          rescue_ret.store(rmw_trigger_guard_condition(rescue));
+        }
+      });
+
+    const rmw_ret_t ret = wait(timeout);
+    wait_returned.store(true);
+
+    trigger_thread.join();
+    watchdog.join();
+
+    EXPECT_EQ(RMW_RET_OK, trigger_ret.load());
+    EXPECT_EQ(RMW_RET_OK, rescue_ret.load());
+    EXPECT_FALSE(watchdog_fired.load())
+      << "rmw_wait did not wake on a guard triggered from another thread";
+    EXPECT_EQ(RMW_RET_OK, ret);
+    EXPECT_TRUE(reported(0));
+  }
+
   rmw_context_t context_;
   rmw_wait_set_t * wait_set_{nullptr};
   std::vector<rmw_guard_condition_t *> guards_;
@@ -218,80 +268,15 @@ TEST_F(GuardFixture, FiniteTimeoutBlocksThenTimesOut)
 /// the assertion instead of hanging the whole binary.
 TEST_F(GuardFixture, GuardTriggeredFromThreadInfiniteTimeoutWakesUp)
 {
-  rmw_guard_condition_t * target = add_guard();
-  rmw_guard_condition_t * rescue = add_guard();
-
-  std::atomic<bool> watchdog_fired{false};
-  std::atomic<bool> wait_returned{false};
-
-  std::thread trigger_thread(
-    [target]() {
-      std::this_thread::sleep_for(std::chrono::milliseconds(100));
-      rmw_trigger_guard_condition(target);
-    });
-
-  std::thread watchdog(
-    [rescue, &watchdog_fired, &wait_returned]() {
-      const auto deadline = std::chrono::steady_clock::now() + kWatchdogTimeout;
-      while (!wait_returned.load() && std::chrono::steady_clock::now() < deadline) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(10));
-      }
-      if (!wait_returned.load()) {
-        watchdog_fired.store(true);
-        rmw_trigger_guard_condition(rescue);
-      }
-    });
-
-  const rmw_ret_t ret = wait(nullptr);  // nullptr timeout == infinite
-  wait_returned.store(true);
-
-  trigger_thread.join();
-  watchdog.join();
-
-  EXPECT_FALSE(watchdog_fired.load())
-    << "rmw_wait did not wake on a guard triggered from another thread";
-  EXPECT_EQ(RMW_RET_OK, ret);
-  EXPECT_TRUE(reported(0));
+  expect_wakes_on_cross_thread_trigger(nullptr);  // nullptr timeout == infinite
 }
 
 /// RMW_DURATION_INFINITE must be treated as infinite, not as a huge finite
 /// timeout that overflows the nanosecond conversion.
 TEST_F(GuardFixture, RmwDurationInfiniteTreatedAsInfinite)
 {
-  rmw_guard_condition_t * target = add_guard();
-  rmw_guard_condition_t * rescue = add_guard();
-
-  std::atomic<bool> watchdog_fired{false};
-  std::atomic<bool> wait_returned{false};
-
-  std::thread trigger_thread(
-    [target]() {
-      std::this_thread::sleep_for(std::chrono::milliseconds(100));
-      rmw_trigger_guard_condition(target);
-    });
-
-  std::thread watchdog(
-    [rescue, &watchdog_fired, &wait_returned]() {
-      const auto deadline = std::chrono::steady_clock::now() + kWatchdogTimeout;
-      while (!wait_returned.load() && std::chrono::steady_clock::now() < deadline) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(10));
-      }
-      if (!wait_returned.load()) {
-        watchdog_fired.store(true);
-        rmw_trigger_guard_condition(rescue);
-      }
-    });
-
   const rmw_time_t infinite = RMW_DURATION_INFINITE;
-  const rmw_ret_t ret = wait(&infinite);
-  wait_returned.store(true);
-
-  trigger_thread.join();
-  watchdog.join();
-
-  EXPECT_FALSE(watchdog_fired.load());
-  EXPECT_EQ(RMW_RET_OK, ret);
-  EXPECT_TRUE(reported(0));
+  expect_wakes_on_cross_thread_trigger(&infinite);
 }
 
 /// A trigger landing in the window between the readiness scan and the attach
@@ -306,11 +291,12 @@ TEST_F(GuardFixture, TriggerDuringScanAttachWindowNotMissed)
   for (int i = 0; i < kIterations; ++i) {
     rmw_guard_condition_t * gc = guards_[0];
     const int delay_us = (i * 7) % 200;
+    std::atomic<rmw_ret_t> trigger_ret{RMW_RET_OK};
 
     std::thread trigger_thread(
-      [gc, delay_us]() {
+      [gc, delay_us, &trigger_ret]() {
         std::this_thread::sleep_for(std::chrono::microseconds(delay_us));
-        rmw_trigger_guard_condition(gc);
+        trigger_ret.store(rmw_trigger_guard_condition(gc));
       });
 
     const auto t0 = std::chrono::steady_clock::now();
@@ -320,6 +306,7 @@ TEST_F(GuardFixture, TriggerDuringScanAttachWindowNotMissed)
       .count();
     trigger_thread.join();
 
+    ASSERT_EQ(RMW_RET_OK, trigger_ret.load()) << "iteration " << i << " failed to trigger";
     ASSERT_EQ(RMW_RET_OK, ret) << "iteration " << i << " missed the trigger";
     ASSERT_TRUE(reported(0)) << "iteration " << i << " did not report the guard";
     ASSERT_LT(elapsed_ms, 500) << "iteration " << i << " only recovered at the deadline";
