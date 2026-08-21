@@ -566,11 +566,46 @@ if(BUILD_TESTING)
       -whitespace/line_length
   )
 
-  # Unit tests (uncomment when needed)
-  # find_package(ament_cmake_gtest REQUIRED)
-  # find_package(test_msgs REQUIRED)
-  # ament_add_gtest(test_rmw_init test/test_rmw_init.cpp)
-  # target_link_libraries(test_rmw_init rmw_int2dds_cpp)
+  # The checks under test/ are plain executables rather than gtest binaries: each
+  # drives the rmw C API (or the FFI directly) and reports through its exit
+  # status. Registering them is what gives `colcon test` something to run - until
+  # now every one of them was only ever compiled, so nothing but the linters could
+  # fail and no runtime regression could be caught.
+  #
+  # GENERATE_RESULT_FOR_RETURN_CODE_ZERO: these write no JUnit XML of their own,
+  # so ament has to synthesise the passing result from the exit status.
+  #
+  # ROS_DOMAIN_ID separates only the two checks that reach DDS through rclcpp -
+  # test_take_sequence and test_dynamic_take - because nothing under src/ reads
+  # the variable: test_connection hardcodes domain 0, and the raw rmw_init path
+  # folds RMW_DEFAULT_DOMAIN_ID to 0. The remaining checks therefore share domain
+  # 0 with each other and with any other domain-0 participant on the network.
+  # colcon runs ctest sequentially (it passes no -j), so they do not currently
+  # collide - but do not read the setting below as isolation. 71 belongs to the
+  # wait-set guard tests on the humble branch; this range stays clear of it.
+  find_package(ament_cmake_test REQUIRED)
+
+  function(rmw_int2dds_add_check name domain_id timeout)
+    # Several checks are built only when an optional dependency was found.
+    if(NOT TARGET ${name})
+      message(STATUS "rmw_int2dds_cpp: ${name} not built; skipping test registration")
+      return()
+    endif()
+    ament_add_test(${name}
+      COMMAND "$<TARGET_FILE:${name}>"
+      TIMEOUT ${timeout}
+      GENERATE_RESULT_FOR_RETURN_CODE_ZERO
+      ENV RMW_IMPLEMENTATION=rmw_int2dds_cpp ROS_DOMAIN_ID=${domain_id}
+    )
+  endfunction()
+
+  rmw_int2dds_add_check(test_connection        72 60)
+  rmw_int2dds_add_check(test_event_validation  73 180)
+  rmw_int2dds_add_check(test_event_smoke       74 120)
+  rmw_int2dds_add_check(test_take_sequence     75 120)
+  rmw_int2dds_add_check(test_dynamic_message   76 120)
+  rmw_int2dds_add_check(test_dynamic_fullflow  77 120)
+  rmw_int2dds_add_check(test_dynamic_take      78 120)
 endif()
 
 # ============================================================================
