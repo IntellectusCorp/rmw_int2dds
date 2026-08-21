@@ -30,6 +30,22 @@ set(INT2DDS_FFI_BASE_URL
 # glibc vs musl. ROS binaries target glibc; override with -DINT2DDS_FFI_LIBC=musl.
 set(INT2DDS_FFI_LIBC "gnu" CACHE STRING "C library variant of the prebuilt int2DDS FFI (gnu|musl)")
 
+# Local artifact override. Point this at a tarball produced by the int2DDS tree
+# (ffi/dist/int2dds-ffi-<version>-<os>.tar.gz) to build against a locally built FFI
+# instead of the published release asset, and to build with no network at all.
+#
+# This exists because the release tag does not identify the ABI: the v0.1.1 assets
+# were rebuilt in place, so two different int2dds-ffi.h files have carried that same
+# version. The bundled manifest is rebuilt with them, which means the sha256 check
+# below cannot tell the two apart either. Naming the file you want is the only way
+# to be certain which build you linked against.
+#
+# The sha256 verification still runs - the manifest travels inside the tarball.
+# The tarball must carry INT2DDS_FFI_VERSION's library soname; a mismatched version
+# fails below with "artifact not found".
+set(INT2DDS_FFI_TARBALL "" CACHE FILEPATH
+  "Local int2DDS FFI tarball to use instead of downloading the release asset")
+
 # ----------------------------------------------------------------------------
 # Detect OS -> per-OS asset name
 # ----------------------------------------------------------------------------
@@ -84,16 +100,28 @@ set(_extract_dir "${CMAKE_CURRENT_BINARY_DIR}/prebuilt")
 set(_tarball "${_dl_dir}/${_asset}")
 set(_url "${INT2DDS_FFI_BASE_URL}/${_asset}")
 
-file(MAKE_DIRECTORY "${_dl_dir}")
-message(STATUS "int2dds_ffi_vendor: fetching ${_url}")
-file(DOWNLOAD "${_url}" "${_tarball}"
-  STATUS _dl_status
-  SHOW_PROGRESS
-  TLS_VERIFY ON)
-list(GET _dl_status 0 _dl_code)
-if(NOT _dl_code EQUAL 0)
-  list(GET _dl_status 1 _dl_msg)
-  message(FATAL_ERROR "int2dds_ffi_vendor: download failed (${_dl_code}): ${_dl_msg}\n  URL: ${_url}")
+if(INT2DDS_FFI_TARBALL)
+  if(NOT EXISTS "${INT2DDS_FFI_TARBALL}")
+    message(FATAL_ERROR
+      "int2dds_ffi_vendor: INT2DDS_FFI_TARBALL does not exist:\n  ${INT2DDS_FFI_TARBALL}")
+  endif()
+  message(STATUS "int2dds_ffi_vendor: using local tarball ${INT2DDS_FFI_TARBALL}")
+  set(_tarball "${INT2DDS_FFI_TARBALL}")
+  # Re-configure when the local tarball is rebuilt, so a fresh int2DDS build is
+  # picked up without having to wipe the build tree by hand.
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${INT2DDS_FFI_TARBALL}")
+else()
+  file(MAKE_DIRECTORY "${_dl_dir}")
+  message(STATUS "int2dds_ffi_vendor: fetching ${_url}")
+  file(DOWNLOAD "${_url}" "${_tarball}"
+    STATUS _dl_status
+    SHOW_PROGRESS
+    TLS_VERIFY ON)
+  list(GET _dl_status 0 _dl_code)
+  if(NOT _dl_code EQUAL 0)
+    list(GET _dl_status 1 _dl_msg)
+    message(FATAL_ERROR "int2dds_ffi_vendor: download failed (${_dl_code}): ${_dl_msg}\n  URL: ${_url}")
+  endif()
 endif()
 
 file(REMOVE_RECURSE "${_extract_dir}")
