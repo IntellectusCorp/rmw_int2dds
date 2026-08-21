@@ -37,9 +37,13 @@
   <depend>std_msgs</depend>
 
   <!-- Prebuilt int2DDS FFI library (downloaded + exported by the vendor pkg).
-       Pinned to the same MINOR: FFI is the single product version; rmw and vendor
-       track it and must match on MINOR (0.x ABI boundary). -->
-  <depend version_gte="0.1.0" version_lt="0.2.0">int2dds_ffi_vendor</depend>
+       No version range: int2dds_ffi_vendor is released from this repository, and
+       catkin_prepare_release forces every package here to carry the same version.
+       A version_lt would therefore go unsatisfiable the moment the repo rolls to
+       the next minor, and it never guarded the FFI ABI anyway - the vendor package
+       version and INT2DDS_FFI_VERSION move independently. The FFI version is
+       pinned in one place: INT2DDS_FFI_VERSION in int2dds_ffi_vendor/CMakeLists.txt. -->
+  <depend>int2dds_ffi_vendor</depend>
 
   <!-- Lint / test -->
   <test_depend>ament_lint_auto</test_depend>
