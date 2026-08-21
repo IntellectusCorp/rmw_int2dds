@@ -2,8 +2,8 @@
 Changelog for package rmw_int2dds_cpp
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Forthcoming
------------
+0.1.0 (2026-08-21)
+------------------
 * Fix participant/context lifecycle: delete contained entities before the
   participant, release the participant when the last node is destroyed,
   recreate context DDS resources on node creation, and release all context
