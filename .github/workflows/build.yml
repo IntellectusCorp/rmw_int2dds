@@ -23,14 +23,11 @@ on:
 jobs:
   build-test:
     runs-on: ubuntu-24.04
-    # rmw_int2dds_cpp/CMakeLists.txt gates the matched-event smoke target on
-    # $ENV{ROS_DISTRO} being "humble". This image exports "jazzy", so the target
-    # is built, which is also what the Jazzy rmw headers support - they carry
-    # rmw/events_statuses/matched.h. Note the two agree here by coincidence:
-    # ros_environment is what exports ROS_DISTRO and the ROS build farm never
-    # installs it, so on the farm the variable is empty and the comparison picks
-    # the branch it happens to pick. Probing for the header instead is tracked
-    # separately.
+    # This image carries the Jazzy rmw headers, which include
+    # rmw/events_statuses/matched.h, so rmw_int2dds_cpp/CMakeLists.txt finds it
+    # and builds the matched-event smoke target. The decision comes from probing
+    # the headers, not from $ENV{ROS_DISTRO}, so it holds wherever this package
+    # is built rather than only where ros_environment happens to be installed.
     container:
       image: ros:jazzy-ros-base
     steps:

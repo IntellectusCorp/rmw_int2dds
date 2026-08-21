@@ -29,18 +29,31 @@
   <depend>rosidl_runtime_c</depend>
   <depend>rosidl_runtime_cpp</depend>
 
-  <!-- Type support packages (introspection-based) -->
+  <!-- Type support packages. The introspection ones carry the type support this
+       RMW consumes; rosidl_typesupport_c/cpp provide the dispatch layer that
+       CMakeLists.txt find_package()es directly. Those two currently arrive anyway
+       as apt dependencies of std_msgs, but leaning on that is exactly how the ROS
+       build farm breaks - it installs only what is declared here. -->
   <depend>rosidl_typesupport_introspection_c</depend>
   <depend>rosidl_typesupport_introspection_cpp</depend>
+  <depend>rosidl_typesupport_c</depend>
+  <depend>rosidl_typesupport_cpp</depend>
 
   <!-- Optional on Humble, always present from Iron on. CMakeLists.txt find_package()es
        it QUIET, so leaving it undeclared makes the dynamic message type support
        vanish from a build-farm .deb with no error at all. -->
   <depend>rosidl_dynamic_typesupport</depend>
 
-  <!-- Used by the in-repo validation/probe executables -->
+  <!-- Used by the in-repo validation/probe executables and the checks under test/.
+       CMakeLists.txt find_package()es every one of these; declaring them is what
+       keeps a build-farm job from either failing to configure or quietly dropping
+       the targets that need them. -->
   <depend>std_msgs</depend>
   <depend>rclcpp</depend>
+  <depend>rcl</depend>
+  <depend>geometry_msgs</depend>
+  <depend>diagnostic_msgs</depend>
+  <exec_depend>rclpy</exec_depend>
 
   <!-- Prebuilt int2DDS FFI library (downloaded + exported by the vendor pkg).
        No version range: int2dds_ffi_vendor is released from this repository, and
@@ -51,12 +64,18 @@
        pinned in one place: INT2DDS_FFI_VERSION in int2dds_ffi_vendor/CMakeLists.txt. -->
   <depend>int2dds_ffi_vendor</depend>
 
-  <!-- Lint / test -->
+  <!-- Lint / test. ament_cmake_cpplint and ament_cmake_flake8 come along with
+       ament_lint_common, but CMakeLists.txt find_package()es them directly in
+       order to call ament_cpplint()/ament_flake8() with explicit paths, so they
+       are declared rather than assumed. Same for ament_cmake_test, which
+       registers the standalone checks under test/. -->
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend>
+  <test_depend>ament_cmake_cpplint</test_depend>
+  <test_depend>ament_cmake_flake8</test_depend>
+  <test_depend>ament_cmake_test</test_depend>
   <test_depend>ament_cmake_gtest</test_depend>
   <test_depend>test_msgs</test_depend>
-  <test_depend>test_rmw_implementation</test_depend>
 
   <!-- Mark this package as an RMW implementation so rmw_implementation builds it -->
   <member_of_group>rmw_implementation_packages</member_of_group>
