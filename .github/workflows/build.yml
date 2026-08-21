@@ -1,0 +1,59 @@
+# Build + test the int2DDS RMW stack (this branch = jazzy). Each version branch
+# (jazzy/humble/rolling) carries its own copy of this workflow pinned to that
+# branch's distro, the same convention package-deb.yml and lint.yml follow: the
+# branches carry distro-specific sources, so building one branch against another
+# distro would either fail or give false confidence.
+#
+# rmw_int2dds_cpp links against the int2DDS FFI library (libint2dds_ffi.so +
+# int2dds-ffi.h). That library is not committed here: the int2dds_ffi_vendor
+# package in this repository downloads the prebuilt tarball from
+# https://github.com/IntellectusCorp/int2dds_ffi_vendor/releases at CMake
+# configure time and verifies it against the sha256 in the bundled manifest.
+# Building int2dds_ffi_vendor before rmw_int2dds_cpp is therefore all CI needs,
+# and it requires outbound network access to github.com.
+name: build
+
+on:
+  push:
+    branches: [jazzy]
+  pull_request:
+    branches: [jazzy]
+  workflow_dispatch:
+
+jobs:
+  build-test:
+    runs-on: ubuntu-24.04
+    # rmw_int2dds_cpp/CMakeLists.txt gates the matched-event smoke target on
+    # $ENV{ROS_DISTRO} being "humble". This image exports "jazzy", so the target
+    # is built, which is also what the Jazzy rmw headers support - they carry
+    # rmw/events_statuses/matched.h. Note the two agree here by coincidence:
+    # ros_environment is what exports ROS_DISTRO and the ROS build farm never
+    # installs it, so on the farm the variable is empty and the comparison picks
+    # the branch it happens to pick. Probing for the header instead is tracked
+    # separately.
+    container:
+      image: ros:jazzy-ros-base
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build and test
+        uses: ros-tooling/action-ros-ci@master
+        with:
+          package-name: int2dds_ffi_vendor rmw_int2dds_cpp
+          target-ros2-distro: jazzy
+          # The action runs `colcon lcov-result` / `colcon coveragepy-result`
+          # after the build, but colcon-lcov-result and colcon-coveragepy-result
+          # are not part of the ros:jazzy-ros-base image, so those verbs abort
+          # the step with exit 2 even when the build and every test pass. No
+          # coverage target is tracked for this package (see
+          # QUALITY_DECLARATION.md), so skip the coverage stage entirely rather
+          # than install two extensions whose output nothing consumes.
+          coverage-result: false
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-jazzy
+          path: ros_ws/build/rmw_int2dds_cpp/test_results/
+          if-no-files-found: ignore
