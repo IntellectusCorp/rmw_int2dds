@@ -4,7 +4,8 @@ set -euo pipefail
 
 : "${ROS_DISTRO:?ROS_DISTRO must be set}"
 RMW_REPO="${RMW_REPO:?RMW_REPO must be set (mount of rmw_int2dds/)}"
-VENDOR_SRC="${VENDOR_SRC:?VENDOR_SRC must be set (mount of int2dds_ffi_vendor/)}"
+# Both packages live in this repository.
+VENDOR_SRC="${RMW_REPO}/int2dds_ffi_vendor"
 RMW_SRC="${RMW_REPO}/rmw_int2dds_cpp"
 ARCH="$(dpkg --print-architecture)"
 OUT="${RMW_REPO}/dist/${ROS_DISTRO}/${ARCH}"
