@@ -199,6 +199,28 @@ guard_condition_is_triggered(const rmw_int2dds_cpp::GuardConditionData * gc_data
   return triggered;
 }
 
+/// Read a guard condition trigger without consuming it
+///
+/// guard_condition_is_triggered clears the trigger as a side effect, so it
+/// cannot be used before the blocking wait: consuming a trigger up front would
+/// leave int2dds_waitset_wait_ex_ns blocked on a condition that is no longer
+/// set. This peek leaves the trigger in place for the post-wait scan to consume
+/// exactly once.
+bool
+guard_condition_peek(const rmw_int2dds_cpp::GuardConditionData * gc_data)
+{
+  if (gc_data == nullptr || gc_data->guard_condition == nullptr) {
+    return false;
+  }
+
+  bool triggered = false;
+  Int2DdsRet ret = int2dds_guardcondition_get_trigger_value(gc_data->guard_condition, &triggered);
+  if (ret != INT2DDS_RET_OK) {
+    return false;
+  }
+  return triggered;
+}
+
 /// Check if a service has a request available
 bool
 service_has_request(const rmw_int2dds_cpp::ServiceData * srv_data)
@@ -372,46 +394,107 @@ refresh_event_status_condition(rmw_int2dds_cpp::EventData * event_data)
   return status_condition;
 }
 
-}  // namespace
-
-extern "C"
+/// Level-triggered readiness scan over every entity handed to rmw_wait
+///
+/// Every probe reads entity state directly, so the scan needs nothing attached
+/// to the wait set. It covers the same ground the wait set does: reader status
+/// conditions map to int2dds_datareader_has_data, event status conditions to
+/// event_is_triggered, and guard conditions to guard_condition_peek. Running it
+/// before attaching lets the common "something is already pending" case skip the
+/// attach/wait/detach round trip entirely, and WaitSet::wait re-evaluates
+/// trigger values on entry, so deferring the attach cannot lose a wake-up.
+///
+/// Guard conditions are peeked, never consumed: the post-wait scan owns the
+/// single allowed consumption per call.
+bool
+any_entity_ready(
+  const rmw_subscriptions_t * subscriptions,
+  const rmw_guard_conditions_t * guard_conditions,
+  const rmw_services_t * services,
+  const rmw_clients_t * clients,
+  const rmw_events_t * events)
 {
-rmw_ret_t
-rmw_wait(
+  if (subscriptions != nullptr) {
+    for (size_t i = 0; i < subscriptions->subscriber_count; ++i) {
+      if (subscriptions->subscribers[i] != nullptr) {
+        auto * sub_data =
+          static_cast<rmw_int2dds_cpp::SubscriptionData *>(subscriptions->subscribers[i]);
+        if (subscription_has_data(sub_data)) {
+          return true;
+        }
+      }
+    }
+  }
+
+  if (guard_conditions != nullptr) {
+    for (size_t i = 0; i < guard_conditions->guard_condition_count; ++i) {
+      if (guard_conditions->guard_conditions[i] != nullptr) {
+        auto * gc_data =
+          static_cast<rmw_int2dds_cpp::GuardConditionData *>(guard_conditions->guard_conditions[i]);
+        if (guard_condition_peek(gc_data)) {
+          return true;
+        }
+      }
+    }
+  }
+
+  if (services != nullptr) {
+    for (size_t i = 0; i < services->service_count; ++i) {
+      if (services->services[i] != nullptr) {
+        auto * srv_data = static_cast<rmw_int2dds_cpp::ServiceData *>(services->services[i]);
+        if (service_has_request(srv_data)) {
+          return true;
+        }
+      }
+    }
+  }
+
+  if (clients != nullptr) {
+    for (size_t i = 0; i < clients->client_count; ++i) {
+      if (clients->clients[i] != nullptr) {
+        auto * cli_data = static_cast<rmw_int2dds_cpp::ClientData *>(clients->clients[i]);
+        if (client_has_response(cli_data)) {
+          return true;
+        }
+      }
+    }
+  }
+
+  if (events != nullptr) {
+    for (size_t i = 0; i < events->event_count; ++i) {
+      if (events->events[i] != nullptr) {
+        auto * event = static_cast<rmw_event_t *>(events->events[i]);
+        if (event->implementation_identifier == rmw_int2dds_cpp::implementation_identifier &&
+          event_is_triggered(event))
+        {
+          return true;
+        }
+      }
+    }
+  }
+
+  return false;
+}
+
+/// Attach every entity handed to rmw_wait to the wait set
+///
+/// Records what was attached so the caller can detach exactly that set. This
+/// runs only when rmw_wait is about to block: the status condition masks it
+/// widens must be in place before int2dds_waitset_wait_ex_ns is called, because
+/// int2dds_statuscondition_set_enabled_statuses neither re-evaluates nor wakes
+/// an already blocked wait set.
+void
+attach_entities(
+  Int2DdsWaitSet * waitset,
   rmw_subscriptions_t * subscriptions,
   rmw_guard_conditions_t * guard_conditions,
   rmw_services_t * services,
   rmw_clients_t * clients,
   rmw_events_t * events,
-  rmw_wait_set_t * wait_set,
-  const rmw_time_t * wait_timeout)
+  std::vector<Int2DdsStatusCondition *> & attached_reader_conditions,
+  std::vector<Int2DdsGuardCondition *> & attached_guards,
+  std::vector<Int2DdsStatusCondition *> & attached_event_conditions)
 {
-  const bool profile = profile_enabled();
-  const auto total_t0 = std::chrono::steady_clock::now();
-  auto attach_t0 = total_t0;
-  uint64_t attach_elapsed_us = 0;
-  uint64_t wait_elapsed_us = 0;
-  uint64_t detach_elapsed_us = 0;
-  uint64_t ready_elapsed_us = 0;
-
-  RMW_CHECK_ARGUMENT_FOR_NULL(wait_set, RMW_RET_INVALID_ARGUMENT);
-
-  if (wait_set->implementation_identifier != rmw_int2dds_cpp::implementation_identifier) {
-    RMW_SET_ERROR_MSG("wait set not from this implementation");
-    return RMW_RET_INCORRECT_RMW_IMPLEMENTATION;
-  }
-
-  auto * ws_data = static_cast<rmw_int2dds_cpp::WaitSetData *>(wait_set->data);
-  if (ws_data == nullptr || ws_data->waitset == nullptr) {
-    RMW_SET_ERROR_MSG("wait set data is null");
-    return RMW_RET_ERROR;
-  }
-
-  // Track attached entities for cleanup
-  std::vector<Int2DdsStatusCondition *> attached_reader_conditions;
-  std::vector<Int2DdsGuardCondition *> attached_guards;
-  std::vector<Int2DdsStatusCondition *> attached_event_conditions;
-
   // Attach subscriptions
   if (subscriptions != nullptr) {
     for (size_t i = 0; i < subscriptions->subscriber_count; ++i) {
@@ -422,7 +505,7 @@ rmw_wait(
           bool ready = ensure_status_condition_mask(
             sub_data->datareader, &sub_data->status_condition, INT2DDS_STATUS_DATA_AVAILABLE);
           Int2DdsRet ret = ready && sub_data->status_condition != nullptr ?
-            int2dds_waitset_attach_statuscondition(ws_data->waitset, sub_data->status_condition) :
+            int2dds_waitset_attach_statuscondition(waitset, sub_data->status_condition) :
             INT2DDS_RET_ERROR;
           if (ret == INT2DDS_RET_OK) {
             attached_reader_conditions.push_back(sub_data->status_condition);
@@ -440,7 +523,7 @@ rmw_wait(
           static_cast<rmw_int2dds_cpp::GuardConditionData *>(guard_conditions->guard_conditions[i]);
         if (gc_data != nullptr && gc_data->guard_condition != nullptr) {
           Int2DdsRet ret = int2dds_waitset_attach_guardcondition(
-            ws_data->waitset, gc_data->guard_condition);
+            waitset, gc_data->guard_condition);
           if (ret == INT2DDS_RET_OK) {
             attached_guards.push_back(gc_data->guard_condition);
           }
@@ -460,8 +543,7 @@ rmw_wait(
             &srv_data->request_status_condition,
             INT2DDS_STATUS_DATA_AVAILABLE);
           Int2DdsRet ret = ready && srv_data->request_status_condition != nullptr ?
-            int2dds_waitset_attach_statuscondition(
-            ws_data->waitset, srv_data->request_status_condition) :
+            int2dds_waitset_attach_statuscondition(waitset, srv_data->request_status_condition) :
             INT2DDS_RET_ERROR;
           if (ret == INT2DDS_RET_OK) {
             attached_reader_conditions.push_back(srv_data->request_status_condition);
@@ -482,8 +564,7 @@ rmw_wait(
             &cli_data->response_status_condition,
             INT2DDS_STATUS_DATA_AVAILABLE);
           Int2DdsRet ret = ready && cli_data->response_status_condition != nullptr ?
-            int2dds_waitset_attach_statuscondition(
-            ws_data->waitset, cli_data->response_status_condition) :
+            int2dds_waitset_attach_statuscondition(waitset, cli_data->response_status_condition) :
             INT2DDS_RET_ERROR;
           if (ret == INT2DDS_RET_OK) {
             attached_reader_conditions.push_back(cli_data->response_status_condition);
@@ -504,8 +585,7 @@ rmw_wait(
         auto * event_data = static_cast<rmw_int2dds_cpp::EventData *>(event->data);
         Int2DdsStatusCondition * status_condition = refresh_event_status_condition(event_data);
         if (status_condition != nullptr) {
-          Int2DdsRet ret = int2dds_waitset_attach_statuscondition(
-            ws_data->waitset, status_condition);
+          Int2DdsRet ret = int2dds_waitset_attach_statuscondition(waitset, status_condition);
           if (ret == INT2DDS_RET_OK) {
             attached_event_conditions.push_back(status_condition);
           }
@@ -513,89 +593,106 @@ rmw_wait(
       }
     }
   }
+}
+
+}  // namespace
+
+extern "C"
+{
+
+rmw_ret_t
+rmw_wait(
+  rmw_subscriptions_t * subscriptions,
+  rmw_guard_conditions_t * guard_conditions,
+  rmw_services_t * services,
+  rmw_clients_t * clients,
+  rmw_events_t * events,
+  rmw_wait_set_t * wait_set,
+  const rmw_time_t * wait_timeout)
+{
+  const bool profile = profile_enabled();
+  const auto total_t0 = std::chrono::steady_clock::now();
+  uint64_t attach_elapsed_us = 0;
+  uint64_t wait_elapsed_us = 0;
+  uint64_t detach_elapsed_us = 0;
+  uint64_t ready_elapsed_us = 0;
+
+  RMW_CHECK_ARGUMENT_FOR_NULL(wait_set, RMW_RET_INVALID_ARGUMENT);
+
+  if (wait_set->implementation_identifier != rmw_int2dds_cpp::implementation_identifier) {
+    RMW_SET_ERROR_MSG("wait set not from this implementation");
+    return RMW_RET_INCORRECT_RMW_IMPLEMENTATION;
+  }
+
+  auto * ws_data = static_cast<rmw_int2dds_cpp::WaitSetData *>(wait_set->data);
+  if (ws_data == nullptr || ws_data->waitset == nullptr) {
+    RMW_SET_ERROR_MSG("wait set data is null");
+    return RMW_RET_ERROR;
+  }
 
   // Convert timeout
-  int64_t timeout_ns = convert_timeout_to_ns(wait_timeout);
+  const int64_t timeout_ns = convert_timeout_to_ns(wait_timeout);
+
+  // Decide readiness before touching the wait set. Every probe reads entity
+  // state directly, so nothing has to be attached for the scan to be accurate,
+  // and WaitSet::wait re-evaluates trigger values on entry, so attaching later
+  // cannot lose a wake-up. When something is already pending - the common case
+  // under load - this skips the attach/wait/detach round trip entirely, which
+  // also avoids leaving a stale trigger flag behind on the wait set.
+  const auto pre_scan_t0 = std::chrono::steady_clock::now();
+  const bool data_already_ready =
+    any_entity_ready(subscriptions, guard_conditions, services, clients, events);
   if (profile) {
-    attach_elapsed_us = elapsed_us(attach_t0, std::chrono::steady_clock::now());
-  }
-  const auto wait_t0 = std::chrono::steady_clock::now();
-  bool data_already_ready = false;
-  if (subscriptions != nullptr) {
-    for (size_t i = 0; i < subscriptions->subscriber_count; ++i) {
-      if (subscriptions->subscribers[i] != nullptr) {
-        auto * sub_data =
-          static_cast<rmw_int2dds_cpp::SubscriptionData *>(subscriptions->subscribers[i]);
-        if (subscription_has_data(sub_data)) {
-          data_already_ready = true;
-          break;
-        }
-      }
-    }
-  }
-  if (!data_already_ready && services != nullptr) {
-    for (size_t i = 0; i < services->service_count; ++i) {
-      if (services->services[i] != nullptr) {
-        auto * srv_data = static_cast<rmw_int2dds_cpp::ServiceData *>(services->services[i]);
-        if (service_has_request(srv_data)) {
-          data_already_ready = true;
-          break;
-        }
-      }
-    }
-  }
-  if (!data_already_ready && clients != nullptr) {
-    for (size_t i = 0; i < clients->client_count; ++i) {
-      if (clients->clients[i] != nullptr) {
-        auto * cli_data = static_cast<rmw_int2dds_cpp::ClientData *>(clients->clients[i]);
-        if (client_has_response(cli_data)) {
-          data_already_ready = true;
-          break;
-        }
-      }
-    }
-  }
-  if (!data_already_ready && events != nullptr) {
-    for (size_t i = 0; i < events->event_count; ++i) {
-      if (events->events[i] != nullptr) {
-        auto * event = static_cast<rmw_event_t *>(events->events[i]);
-        if (event->implementation_identifier == rmw_int2dds_cpp::implementation_identifier &&
-          event_is_triggered(event))
-        {
-          data_already_ready = true;
-          break;
-        }
-      }
-    }
+    ready_elapsed_us = elapsed_us(pre_scan_t0, std::chrono::steady_clock::now());
   }
 
-  // waitset_wait_ex_ns was consolidated into wait_ex_ns, which returns the triggered
-  // conditions; the wait loop below re-checks conditions itself, so free the sequence.
   Int2DdsRet wait_ret = INT2DDS_RET_OK;
   if (!data_already_ready) {
-    Int2DdsConditionSeq * triggered = nullptr;
-    wait_ret = int2dds_waitset_wait_ex_ns(ws_data->waitset, timeout_ns, &triggered);
-    if (triggered) {
-      int2dds_condition_seq_delete(triggered);
-    }
-  }
-  if (profile) {
-    wait_elapsed_us = elapsed_us(wait_t0, std::chrono::steady_clock::now());
-  }
+    if (timeout_ns == 0) {
+      // Poll: the scan above already covers every condition the wait set could
+      // report, so a zero timeout wait cannot observe anything it missed.
+      wait_ret = INT2DDS_RET_TIMEOUT;
+    } else {
+      // Track attached entities for cleanup
+      std::vector<Int2DdsStatusCondition *> attached_reader_conditions;
+      std::vector<Int2DdsGuardCondition *> attached_guards;
+      std::vector<Int2DdsStatusCondition *> attached_event_conditions;
 
-  // Detach all entities (cleanup)
-  const auto detach_t0 = std::chrono::steady_clock::now();
-  for (auto * condition : attached_reader_conditions) {
-    int2dds_waitset_detach_statuscondition(ws_data->waitset, condition);
-  }
-  for (auto * guard : attached_guards) {
-    int2dds_waitset_detach_guardcondition(ws_data->waitset, guard);
-  }
-  for (auto * condition : attached_event_conditions) {
-    int2dds_waitset_detach_statuscondition(ws_data->waitset, condition);
-  }
-  if (profile) {
-    detach_elapsed_us = elapsed_us(detach_t0, std::chrono::steady_clock::now());
+      const auto attach_t0 = std::chrono::steady_clock::now();
+      attach_entities(
+        ws_data->waitset, subscriptions, guard_conditions, services, clients, events,
+        attached_reader_conditions, attached_guards, attached_event_conditions);
+      if (profile) {
+        attach_elapsed_us = elapsed_us(attach_t0, std::chrono::steady_clock::now());
+      }
+
+      // waitset_wait_ex_ns was consolidated into wait_ex_ns, which returns the triggered
+      // conditions; the scan below re-checks conditions itself, so free the sequence.
+      const auto wait_t0 = std::chrono::steady_clock::now();
+      Int2DdsConditionSeq * triggered = nullptr;
+      wait_ret = int2dds_waitset_wait_ex_ns(ws_data->waitset, timeout_ns, &triggered);
+      if (triggered) {
+        int2dds_condition_seq_delete(triggered);
+      }
+      if (profile) {
+        wait_elapsed_us = elapsed_us(wait_t0, std::chrono::steady_clock::now());
+      }
+
+      // Detach all entities (cleanup)
+      const auto detach_t0 = std::chrono::steady_clock::now();
+      for (auto * condition : attached_reader_conditions) {
+        int2dds_waitset_detach_statuscondition(ws_data->waitset, condition);
+      }
+      for (auto * guard : attached_guards) {
+        int2dds_waitset_detach_guardcondition(ws_data->waitset, guard);
+      }
+      for (auto * condition : attached_event_conditions) {
+        int2dds_waitset_detach_statuscondition(ws_data->waitset, condition);
+      }
+      if (profile) {
+        detach_elapsed_us = elapsed_us(detach_t0, std::chrono::steady_clock::now());
+      }
+    }
   }
 
   // Check for timeout
@@ -628,7 +725,7 @@ rmw_wait(
     }
     if (profile) {
       record_wait_profile(
-        attach_elapsed_us, wait_elapsed_us, detach_elapsed_us, 0,
+        attach_elapsed_us, wait_elapsed_us, detach_elapsed_us, ready_elapsed_us,
         elapsed_us(total_t0, std::chrono::steady_clock::now()), wait_ret);
     }
     return RMW_RET_TIMEOUT;
@@ -637,7 +734,7 @@ rmw_wait(
   if (wait_ret != INT2DDS_RET_OK) {
     if (profile) {
       record_wait_profile(
-        attach_elapsed_us, wait_elapsed_us, detach_elapsed_us, 0,
+        attach_elapsed_us, wait_elapsed_us, detach_elapsed_us, ready_elapsed_us,
         elapsed_us(total_t0, std::chrono::steady_clock::now()), wait_ret);
     }
     RMW_SET_ERROR_MSG("wait failed");
@@ -713,7 +810,8 @@ rmw_wait(
   }
 
   if (profile) {
-    ready_elapsed_us = elapsed_us(ready_t0, std::chrono::steady_clock::now());
+    // ready_elapsed_us already holds the pre-wait scan; add the post-wait one.
+    ready_elapsed_us += elapsed_us(ready_t0, std::chrono::steady_clock::now());
     record_wait_profile(
       attach_elapsed_us, wait_elapsed_us, detach_elapsed_us, ready_elapsed_us,
       elapsed_us(total_t0, std::chrono::steady_clock::now()), wait_ret);

@@ -588,6 +588,31 @@ if(BUILD_TESTING)
       -whitespace/line_length
   )
 
+  # Wait set unit tests. rmw_create_wait_set and rmw_create_guard_condition
+  # only validate the context implementation identifier, so these run without a
+  # DDS participant: no discovery, no sockets, no traffic, and no flakiness
+  # from either.
+  find_package(ament_cmake_gtest REQUIRED)
+  ament_add_gtest(test_rmw_wait_guards test/test_rmw_wait_guards.cpp
+    TIMEOUT 120
+    ENV RMW_IMPLEMENTATION=rmw_int2dds_cpp ROS_DOMAIN_ID=71
+  )
+  if(TARGET test_rmw_wait_guards)
+    target_include_directories(test_rmw_wait_guards PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+    target_link_libraries(test_rmw_wait_guards
+      rmw_int2dds_cpp
+      int2dds_ffi::int2dds_ffi
+      ${PLATFORM_LIBS}
+    )
+    ament_target_dependencies(test_rmw_wait_guards rmw rcutils)
+    if(WIN32)
+      add_custom_command(TARGET test_rmw_wait_guards POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        $<TARGET_FILE:int2dds_ffi::int2dds_ffi> $<TARGET_FILE_DIR:test_rmw_wait_guards>
+        COMMENT "Copying int2dds_ffi.dll for test_rmw_wait_guards")
+    endif()
+  endif()
+
   # The checks under test/ are plain executables rather than gtest binaries: each
   # drives the rmw C API (or the FFI directly) and reports through its exit
   # status. Registering them is what gives `colcon test` something to run - until
@@ -603,8 +628,8 @@ if(BUILD_TESTING)
   # folds RMW_DEFAULT_DOMAIN_ID to 0. The remaining checks therefore share domain
   # 0 with each other and with any other domain-0 participant on the network.
   # colcon runs ctest sequentially (it passes no -j), so they do not currently
-  # collide - but do not read the setting below as isolation. 71 belongs to the
-  # wait-set guard tests on the humble branch; this range stays clear of it.
+  # collide - but do not read the setting below as isolation. 71 is taken by
+  # test_rmw_wait_guards above; this range stays clear of it.
   find_package(ament_cmake_test REQUIRED)
 
   function(rmw_int2dds_add_check name domain_id timeout)
