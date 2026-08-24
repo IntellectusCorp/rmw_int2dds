@@ -36,6 +36,8 @@
   <depend>rmw</depend>
   <depend>rcutils</depend>
   <depend>std_msgs</depend>
+  <!-- Trigger.srv backs the service endpoint info check under test/. -->
+  <depend>std_srvs</depend>
 
   <!-- test_take_sequence links the middleware directly instead of going through
        rmw_implementation, so this is a build dependency rather than exec-only.

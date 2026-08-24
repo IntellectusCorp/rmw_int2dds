@@ -159,6 +159,38 @@ target_link_libraries(test_dynamic_fullflow
   rosidl_typesupport_cpp::rosidl_typesupport_cpp)
 
 # ============================================================================
+# Service endpoint info: the service type hash on REMOTE endpoints
+# ----------------------------------------------------------------------------
+# Built only where rmw exposes the queries. Probing the header rather than
+# printing "SKIP:" at runtime keeps a missing API from reading as a pass, the
+# same reason rmw_int2dds_cpp probes for matched.h.
+#
+# NO_DEFAULT_PATH keeps the search inside the rmw package that was just found.
+# ============================================================================
+find_package(std_srvs REQUIRED)
+find_file(RMW_INT2DDS_SERVICE_ENDPOINT_INFO_HEADER
+  NAMES rmw/get_service_endpoint_info.h
+  HINTS ${rmw_INCLUDE_DIRS}
+  NO_DEFAULT_PATH)
+mark_as_advanced(RMW_INT2DDS_SERVICE_ENDPOINT_INFO_HEADER)
+if(RMW_INT2DDS_SERVICE_ENDPOINT_INFO_HEADER)
+  message(STATUS
+    "rmw service endpoint info API found: ${RMW_INT2DDS_SERVICE_ENDPOINT_INFO_HEADER}")
+  add_executable(test_service_endpoint_hash test/test_service_endpoint_hash.cpp)
+  target_link_libraries(test_service_endpoint_hash
+    rclcpp::rclcpp
+    rcl::rcl
+    rmw::rmw
+    rcutils::rcutils
+    ${std_srvs_TARGETS}
+  )
+else()
+  message(STATUS
+    "rmw service endpoint info API not available (searched: ${rmw_INCLUDE_DIRS}) - "
+    "the service type hash check is disabled for this rmw version.")
+endif()
+
+# ============================================================================
 # Register the checks so `colcon test` runs them
 # ----------------------------------------------------------------------------
 # These are plain executables that report through their exit status, so ament
@@ -183,6 +215,9 @@ if(BUILD_TESTING)
   add_validation_check(test_dynamic_message  82)
   add_validation_check(test_dynamic_fullflow 83)
   add_validation_check(test_dynamic_take     84)
+  if(TARGET test_service_endpoint_hash)
+    add_validation_check(test_service_endpoint_hash 85)
+  endif()
 
   # These checks print "SKIP:" and still exit 0 when a message package is absent,
   # so a missing dependency would read as a pass. Every find_package above is

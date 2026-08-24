@@ -841,11 +841,31 @@ extern "C" void rmw_int2dds_endpoint_discovery_cb(
     // deprecated and would register this endpoint as RIHS01_0000... The push
     // callback wins the dedup race against sync_remote_entities_to_common, so
     // dropping the hash here would make it permanent.
+    //
+    // The same argument applies to the service type hash below: this path and
+    // sync_remote_entities_to_common share the synced_remote_entities dedup, so
+    // whichever gets there first decides what the graph cache holds. Registering
+    // without it here left every remote service/client endpoint reporting an
+    // unset hash from rmw_get_{clients,servers}_info_by_service - the local
+    // endpoints looked right because common_add_local_entity does pass it.
+#ifdef RMW_INT2DDS_HAS_SERVICE_ENDPOINT_INFO
+    // Only service endpoints carry a sertypehash; version 0 means unset.
+    const rosidl_type_hash_t service_type_hash =
+      read_endpoint_service_type_hash(
+      publication, int2dds_publication_builtin_topic_data_get_user_data);
+    context_data->common->graph_cache.add_entity(
+      gid, topic_name, type_name,
+      read_endpoint_type_hash(
+        publication, int2dds_publication_builtin_topic_data_get_user_data),
+      participant_gid, qos, false,
+      service_type_hash.version != 0 ? &service_type_hash : nullptr);
+#else
     context_data->common->graph_cache.add_entity(
       gid, topic_name, type_name,
       read_endpoint_type_hash(
         publication, int2dds_publication_builtin_topic_data_get_user_data),
       participant_gid, qos, false);
+#endif
     synced[key] = false;
     return;
   }
@@ -917,11 +937,25 @@ extern "C" void rmw_int2dds_endpoint_discovery_cb(
     std::memcpy(gid.data, key.data(), RMW_GID_STORAGE_SIZE);
     rmw_gid_t participant_gid = {};
     std::memcpy(participant_gid.data, effective_key.data(), 12);
+    // Same as the writer branch above: the service type hash has to ride along
+    // here too, or the push path's dedup win makes its absence permanent.
+#ifdef RMW_INT2DDS_HAS_SERVICE_ENDPOINT_INFO
+    const rosidl_type_hash_t service_type_hash =
+      read_endpoint_service_type_hash(
+      subscription, int2dds_subscription_builtin_topic_data_get_user_data);
+    context_data->common->graph_cache.add_entity(
+      gid, topic_name, type_name,
+      read_endpoint_type_hash(
+        subscription, int2dds_subscription_builtin_topic_data_get_user_data),
+      participant_gid, qos, true,
+      service_type_hash.version != 0 ? &service_type_hash : nullptr);
+#else
     context_data->common->graph_cache.add_entity(
       gid, topic_name, type_name,
       read_endpoint_type_hash(
         subscription, int2dds_subscription_builtin_topic_data_get_user_data),
       participant_gid, qos, true);
+#endif
     synced[key] = true;
     return;
   }
