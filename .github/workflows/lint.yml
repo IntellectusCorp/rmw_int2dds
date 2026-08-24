@@ -36,4 +36,4 @@ jobs:
           distribution: jazzy
           # Every package in this repository. action-ros-lint takes a
           # whitespace-separated list, same as build.yml.
-          package-name: int2dds_ffi_vendor rmw_int2dds_cpp
+          package-name: int2dds_ffi_vendor rmw_int2dds_cpp rmw_int2dds_validation
