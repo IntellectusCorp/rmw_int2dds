@@ -36,7 +36,8 @@ int2DDS as its middleware via `RMW_IMPLEMENTATION=rmw_int2dds_cpp`.
 
 ```bash
 # 1) Get the sources into your ROS 2 workspace
-# This repository carries both packages: rmw_int2dds_cpp and int2dds_ffi_vendor.
+# This repository carries every package you need: rmw_int2dds_cpp, its
+# int2dds_ffi_vendor dependency, and the rmw_int2dds_validation probes.
 mkdir -p ~/ros2_ws/src && cd ~/ros2_ws/src
 git clone -b jazzy https://github.com/IntellectusCorp/rmw_int2dds.git
 
