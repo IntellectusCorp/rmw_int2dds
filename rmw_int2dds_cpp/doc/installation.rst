@@ -7,9 +7,9 @@ from binaries.
 Prerequisites
 -------------
 
-* A supported ROS 2 distribution installed and sourced (Humble or Jazzy).
+* A supported ROS 2 distribution installed and sourced (Humble, Jazzy or Lyrical).
 * ``colcon`` build tools and ``rosdep``.
-* A C++17 compiler and CMake >= 3.14.4.
+* A C++20 compiler and CMake >= 3.14.4.
 * The int2DDS core library (resolved via the ``int2dds`` rosdep key).
 
 Build from source
@@ -45,6 +45,8 @@ Once released through the ROS buildfarm, install via the package manager:
    sudo apt install ros-humble-rmw-int2dds-cpp
    # Jazzy
    sudo apt install ros-jazzy-rmw-int2dds-cpp
+   # Lyrical
+   sudo apt install ros-lyrical-rmw-int2dds-cpp
 
 .. note::
 
