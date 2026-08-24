@@ -36,7 +36,7 @@ jobs:
       - name: Build and test
         uses: ros-tooling/action-ros-ci@master
         with:
-          package-name: int2dds_ffi_vendor rmw_int2dds_cpp
+          package-name: int2dds_ffi_vendor rmw_int2dds_cpp rmw_int2dds_validation
           target-ros2-distro: jazzy
           # The action runs `colcon lcov-result` / `colcon coveragepy-result`
           # after the build, but colcon-lcov-result and colcon-coveragepy-result

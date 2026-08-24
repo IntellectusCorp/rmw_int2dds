@@ -577,8 +577,10 @@ rmw_destroy_client(rmw_node_t * node, rmw_client_t * client)
     }
   } else {
     // The detach path released and nulled the reader/writer/topics but left
-    // response_status_condition live, so it would leak when cli_data is freed
-    // below. No double free: the detach path never touched the condition.
+    // response_status_condition live and cli_data still referenced by any
+    // wait-set cache. Clean the caches and release the condition before cli_data
+    // is freed (no double free: the detach path never touched the condition).
+    rmw_int2dds_cpp::waitset_registry_clean_caches();
     if (cli_data->response_status_condition != nullptr) {
       int2dds_statuscondition_delete(cli_data->response_status_condition);
       cli_data->response_status_condition = nullptr;

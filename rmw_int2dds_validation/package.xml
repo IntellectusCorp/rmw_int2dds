@@ -59,6 +59,11 @@
        installed as entry points, so rclpy is only needed at runtime. -->
   <exec_depend>rclpy</exec_depend>
 
+  <!-- CMakeLists.txt find_package()es this to register the checks with ctest.
+       It arrives with ament_cmake anyway, but this package declares what it
+       looks for rather than assuming, same as rmw_int2dds_cpp. -->
+  <test_depend>ament_cmake_test</test_depend>
+
   <export>
     <build_type>ament_cmake</build_type>
   </export>
