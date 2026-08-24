@@ -52,5 +52,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: test-results-jazzy
-          path: ros_ws/build/rmw_int2dds_cpp/test_results/
+          # Both packages register tests; a single-package path silently dropped
+          # rmw_int2dds_validation's results.
+          path: ros_ws/build/*/test_results/
           if-no-files-found: ignore
