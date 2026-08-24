@@ -13,6 +13,9 @@ on:
     branches: [lyrical]
     paths:
       - 'packaging/**'
+      # A bump of INT2DDS_FFI_VERSION changes what lands in the vendor deb, so
+      # it has to trigger this workflow too (plan 3.6).
+      - 'int2dds_ffi_vendor/**'
       - '.github/workflows/package-deb.yml'
   push:
     tags: ['v*']

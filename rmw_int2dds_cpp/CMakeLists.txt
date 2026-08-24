@@ -408,6 +408,10 @@ ament_export_dependencies(
   int2dds_ffi_vendor
   rcutils
   rmw
+  # Linked PUBLIC into the exported target above, so a consumer of
+  # rmw_int2dds_cpp::rmw_int2dds_cpp needs it resolved. It happens to arrive
+  # transitively through rmw today; do not rely on that.
+  rosidl_dynamic_typesupport
   rosidl_runtime_c
   rosidl_runtime_cpp
   rosidl_typesupport_introspection_c

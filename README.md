@@ -165,7 +165,7 @@ verified against the per-test xunit/gtest XML results):
 - QoS mapping: [doc/qos_mapping.rst](rmw_int2dds_cpp/doc/qos_mapping.rst)
 - Security: [doc/security.rst](rmw_int2dds_cpp/doc/security.rst) — **note: DDS-Security / SROS 2 is not supported yet**
 - Examples: [examples/](rmw_int2dds_cpp/examples/)
-- API docs are published at `docs.ros.org/en/{humble,jazzy}/p/rmw_int2dds_cpp/` once released.
+- API docs are published at `docs.ros.org/en/{humble,jazzy,lyrical}/p/rmw_int2dds_cpp/` once released.
 
 ## Contributing
 
