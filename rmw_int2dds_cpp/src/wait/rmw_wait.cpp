@@ -599,6 +599,8 @@ stamp_desired_attachments(
   ws_data->cached_services.clear();
   ws_data->cached_clients.clear();
   ws_data->cached_events.clear();
+  // This pass supersedes whatever raised the flag last time.
+  ws_data->force_rebuild = false;
 
   bool all_attached = true;
 
@@ -727,13 +729,18 @@ stamp_desired_attachments(
   }
 
   if (!all_attached) {
-    // An attach failed. Drop the cache so the next call rebuilds and retries,
-    // restoring the pre-cache behavior of attaching afresh on every call.
-    ws_data->cached_subscriptions.clear();
-    ws_data->cached_guard_conditions.clear();
-    ws_data->cached_services.clear();
-    ws_data->cached_clients.clear();
-    ws_data->cached_events.clear();
+    // An attach failed. Ask the next call to rebuild and retry, restoring the
+    // pre-cache behavior of attaching afresh on every call.
+    //
+    // This used to be expressed by emptying the cached_* lists. That reads as
+    // "nothing is attached", which is false - whatever succeeded in this pass
+    // is still attached - and it is indistinguishable from a caller that asked
+    // for nothing. require_reattach(empty, 0, nullptr) is false, so the next
+    // call passing no entities at all skipped both the rebuild and
+    // detach_stale_attachments, and the successful attachments from this pass
+    // stayed attached for good. The caches now keep mirroring what was asked
+    // for, and the retry is a flag of its own.
+    ws_data->force_rebuild = true;
   }
 }
 
@@ -830,6 +837,7 @@ rmw_wait(
       // Otherwise the conditions attached last time are still in place.
       const auto attach_t0 = std::chrono::steady_clock::now();
       if (
+        ws_data->force_rebuild ||
         require_reattach(
           ws_data->cached_subscriptions,
           subscriptions != nullptr ? subscriptions->subscriber_count : 0,
