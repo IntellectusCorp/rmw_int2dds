@@ -428,7 +428,7 @@ rmw_destroy_node(rmw_node_t * node)
   }
 
   // Delete this node's publisher DataWriters now to free their history caches.
-  // lyrical rclpy defers publisher teardown (Node.destroy_node ->
+  // rclpy defers publisher teardown from Lyrical on (Node.destroy_node ->
   // handle.destroy_when_not_in_use), so rmw_destroy_publisher may not run before
   // the node/participant is gone, orphaning each cycle's DataWriter cache. The
   // datawriter and its status condition are nulled so a later

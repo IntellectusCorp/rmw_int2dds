@@ -75,19 +75,21 @@ Forthcoming
 * Add ``INT2DDS_FFI_TARBALL`` to the vendor package, so a build can consume a
   locally built FFI tarball instead of the published release asset - the release
   tag alone does not identify the ABI.
-* Build on ROS 2 Lyrical: C++20, and namespaced CMake targets instead of
-  ``ament_target_dependencies()``, which ament_cmake no longer defines.
-* Adapt to the Lyrical rmw API behind ``__has_include`` probes, so the same
-  sources still build on Jazzy and Humble: enclave string ownership through
+* Build on ROS 2 Rolling: C++20, and namespaced CMake targets instead of
+  ``ament_target_dependencies()``, which ament_cmake no longer defines
+  (removed in 2.8.x; Rolling ships 2.9.1).
+* Adapt to the post-Jazzy rmw API behind ``__has_include`` probes, so the same
+  sources still build on Lyrical, Jazzy and Humble: enclave string ownership through
   ``rmw_enclave_options_copy``/``_fini``, no ``rmw_localhost_only_t``, no
   ``RMW_QOS_POLICY_LIVELINESS_MANUAL_BY_NODE``, and ``RMW_RET_INVALID_ARGUMENT``
   where the conformance suite previously expected ``RMW_RET_ERROR``.
 * Implement ``rmw_get_clients_info_by_service`` and
-  ``rmw_get_servers_info_by_service``, new in Lyrical, and publish the
+  ``rmw_get_servers_info_by_service``, added in rmw 7.9.1, and publish the
   service-level type hash the graph needs to answer them.
-* Delete a node's publisher DataWriters in ``rmw_destroy_node``. Lyrical's rclpy
-  defers publisher teardown, so ``rmw_destroy_publisher`` may never run before
-  the participant is gone, orphaning each cycle's DataWriter history cache.
+* Delete a node's publisher DataWriters in ``rmw_destroy_node``. rclpy defers
+  publisher teardown from Lyrical on, so ``rmw_destroy_publisher`` may never run
+  before the participant is gone, orphaning each cycle's DataWriter history
+  cache.
 * Contributors: Intellectus Corp.
 
 0.0.1 (2026-06-25)
