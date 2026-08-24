@@ -99,8 +99,15 @@ int32_t
 liveliness_to_int2dds(rmw_qos_liveliness_policy_t liveliness)
 {
   switch (liveliness) {
-// ROS 2 Lyrical removed the deprecated MANUAL_BY_NODE policy; detect via a header
-// introduced in the same release (enum values are invisible to __has_include).
+// The deprecated MANUAL_BY_NODE liveliness policy is gone from Lyrical's rmw.
+// Enumerators are invisible to __has_include, so probe a header instead:
+// rmw/get_service_endpoint_info.h, added in rmw 7.9.1 (ros2/rmw#371). That is
+// NOT the same release the enumerator went in - it is still present at 7.8.2
+// and gone by 7.10.1 - but no released distro ships an rmw in between, so the
+// probe is exact everywhere this package builds:
+//   jazzy 7.3.3, kilted 7.8.2  -> header absent,  enumerator present
+//   lyrical 7.10.1             -> header present, enumerator absent
+// Revisit if this ever has to build against rmw 7.9.x.
 #if !__has_include("rmw/get_service_endpoint_info.h")
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
@@ -621,7 +628,9 @@ rmw_service_server_is_available(
 {
 // The conformance suite's expectation for null arguments here changed across
 // distros: Jazzy expects RMW_RET_ERROR, Lyrical expects RMW_RET_INVALID_ARGUMENT
-// (detected via a header introduced in the same release).
+// The probe is rmw/get_service_endpoint_info.h (rmw 7.9.1), used here only as a
+// "Lyrical or newer" marker - the suite's expectation is not tied to that
+// header's release, and no distro ships an rmw between 7.8.2 and 7.10.1.
 #if __has_include("rmw/get_service_endpoint_info.h")
   constexpr rmw_ret_t null_argument_ret = RMW_RET_INVALID_ARGUMENT;
 #else
