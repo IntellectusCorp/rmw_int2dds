@@ -1,8 +1,8 @@
 cmake_minimum_required(VERSION 3.14)
 project(rmw_int2dds_validation)
 
-# C++17 standard
-set(CMAKE_CXX_STANDARD 17)
+# C++20: platform minimum since ROS 2 Kilted (REP 2000); Jazzy toolchains accept it too.
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
@@ -28,9 +28,12 @@ find_package(rmw_int2dds_cpp REQUIRED)
 # time through RMW_IMPLEMENTATION, so none of them link rmw_int2dds_cpp and all
 # of them build and install identically.
 # ============================================================================
+# ament_target_dependencies() was removed from ament_cmake in ROS 2 Lyrical
+# (ament_cmake 2.8.x no longer defines it), so every probe links the namespaced
+# targets directly. Callers pass CMake targets, not package names.
 function(add_probe target source)
   add_executable(${target} ${source})
-  ament_target_dependencies(${target} ${ARGN})
+  target_link_libraries(${target} ${ARGN})
   install(TARGETS ${target}
     RUNTIME DESTINATION lib/${PROJECT_NAME}
   )
@@ -38,55 +41,55 @@ endfunction()
 
 # QoS: durability
 add_probe(qos_durability_sub_cpp
-  validation/qos/durability/rclcpp/qos_durability_sub.cpp rclcpp std_msgs)
+  validation/qos/durability/rclcpp/qos_durability_sub.cpp rclcpp::rclcpp ${std_msgs_TARGETS})
 add_probe(qos_durability_pub_cpp
-  validation/qos/durability/rclcpp/qos_durability_pub.cpp rclcpp std_msgs)
+  validation/qos/durability/rclcpp/qos_durability_pub.cpp rclcpp::rclcpp ${std_msgs_TARGETS})
 
 # QoS: history depth
 add_probe(qos_history_depth_sub_cpp
-  validation/qos/history_depth/rclcpp/qos_history_depth_sub.cpp rclcpp std_msgs)
+  validation/qos/history_depth/rclcpp/qos_history_depth_sub.cpp rclcpp::rclcpp ${std_msgs_TARGETS})
 add_probe(qos_history_depth_pub_cpp
-  validation/qos/history_depth/rclcpp/qos_history_depth_pub.cpp rclcpp std_msgs)
+  validation/qos/history_depth/rclcpp/qos_history_depth_pub.cpp rclcpp::rclcpp ${std_msgs_TARGETS})
 
 # QoS: deadline
 add_probe(qos_deadline_sub_cpp
-  validation/qos/deadline/rclcpp/qos_deadline_sub.cpp rclcpp std_msgs)
+  validation/qos/deadline/rclcpp/qos_deadline_sub.cpp rclcpp::rclcpp ${std_msgs_TARGETS})
 add_probe(qos_deadline_pub_cpp
-  validation/qos/deadline/rclcpp/qos_deadline_pub.cpp rclcpp std_msgs)
+  validation/qos/deadline/rclcpp/qos_deadline_pub.cpp rclcpp::rclcpp ${std_msgs_TARGETS})
 
 # QoS: liveliness
 add_probe(qos_liveliness_sub_cpp
-  validation/qos/liveliness/rclcpp/qos_liveliness_sub.cpp rclcpp std_msgs)
+  validation/qos/liveliness/rclcpp/qos_liveliness_sub.cpp rclcpp::rclcpp ${std_msgs_TARGETS})
 add_probe(qos_liveliness_pub_cpp
-  validation/qos/liveliness/rclcpp/qos_liveliness_pub.cpp rclcpp std_msgs)
+  validation/qos/liveliness/rclcpp/qos_liveliness_pub.cpp rclcpp::rclcpp ${std_msgs_TARGETS})
 
 # QoS: lifespan
 add_probe(qos_lifespan_sub_cpp
-  validation/qos/lifespan/rclcpp/qos_lifespan_sub.cpp rclcpp std_msgs)
+  validation/qos/lifespan/rclcpp/qos_lifespan_sub.cpp rclcpp::rclcpp ${std_msgs_TARGETS})
 add_probe(qos_lifespan_pub_cpp
-  validation/qos/lifespan/rclcpp/qos_lifespan_pub.cpp rclcpp std_msgs)
+  validation/qos/lifespan/rclcpp/qos_lifespan_pub.cpp rclcpp::rclcpp ${std_msgs_TARGETS})
 
 # Content-filtered topics
 add_probe(content_filter_lifecycle_check_cpp
-  validation/cft/rclcpp/content_filter_lifecycle_check.cpp rclcpp std_msgs)
+  validation/cft/rclcpp/content_filter_lifecycle_check.cpp rclcpp::rclcpp ${std_msgs_TARGETS})
 
 # Executor callbacks - publishes nothing, so no std_msgs here.
 add_probe(callback_executor_smoke_cpp
-  validation/callback/rclcpp/callback_executor_smoke.cpp rclcpp)
+  validation/callback/rclcpp/callback_executor_smoke.cpp rclcpp::rclcpp)
 
 # Performance: latency / throughput / readiness
 add_probe(perf_latency_pub_cpp
-  validation/perf/rclcpp/perf_latency_pub_cpp.cpp rclcpp std_msgs)
+  validation/perf/rclcpp/perf_latency_pub_cpp.cpp rclcpp::rclcpp ${std_msgs_TARGETS})
 add_probe(perf_latency_sub_cpp
-  validation/perf/rclcpp/perf_latency_sub_cpp.cpp rclcpp std_msgs)
+  validation/perf/rclcpp/perf_latency_sub_cpp.cpp rclcpp::rclcpp ${std_msgs_TARGETS})
 add_probe(perf_throughput_pub_cpp
-  validation/perf/rclcpp/perf_throughput_pub_cpp.cpp rclcpp std_msgs)
+  validation/perf/rclcpp/perf_throughput_pub_cpp.cpp rclcpp::rclcpp ${std_msgs_TARGETS})
 add_probe(perf_throughput_sub_cpp
-  validation/perf/rclcpp/perf_throughput_sub_cpp.cpp rclcpp std_msgs)
+  validation/perf/rclcpp/perf_throughput_sub_cpp.cpp rclcpp::rclcpp ${std_msgs_TARGETS})
 add_probe(perf_readiness_pub_cpp
-  validation/perf/rclcpp/perf_readiness_pub_cpp.cpp rclcpp std_msgs)
+  validation/perf/rclcpp/perf_readiness_pub_cpp.cpp rclcpp::rclcpp ${std_msgs_TARGETS})
 add_probe(perf_readiness_sub_cpp
-  validation/perf/rclcpp/perf_readiness_sub_cpp.cpp rclcpp std_msgs)
+  validation/perf/rclcpp/perf_readiness_sub_cpp.cpp rclcpp::rclcpp ${std_msgs_TARGETS})
 
 # ============================================================================
 # D4: batch take_sequence functional check
@@ -103,13 +106,13 @@ add_probe(perf_readiness_sub_cpp
 # builds everywhere.
 # ============================================================================
 add_executable(test_take_sequence test/test_take_sequence.cpp)
-ament_target_dependencies(test_take_sequence
-  rclcpp
-  rcl
-  rmw
-  rcutils
-  std_msgs
-  rmw_int2dds_cpp
+target_link_libraries(test_take_sequence
+  rclcpp::rclcpp
+  rcl::rcl
+  rmw::rmw
+  rcutils::rcutils
+  ${std_msgs_TARGETS}
+  rmw_int2dds_cpp::rmw_int2dds_cpp
 )
 
 # ============================================================================
@@ -139,8 +142,10 @@ function(add_dynamic_check target)
     int2dds_ffi::int2dds_ffi
     rosidl_dynamic_typesupport::rosidl_dynamic_typesupport
     ${ARGN}
+    rmw::rmw
+    rcutils::rcutils
+    rmw_int2dds_cpp::rmw_int2dds_cpp
   )
-  ament_target_dependencies(${target} rmw rcutils rmw_int2dds_cpp)
 endfunction()
 
 add_dynamic_check(test_dynamic_message
@@ -149,7 +154,9 @@ add_dynamic_check(test_dynamic_message
 add_dynamic_check(test_dynamic_fullflow ${test_msgs_TARGETS})
 add_dynamic_check(test_dynamic_take ${diagnostic_msgs_TARGETS})
 target_link_libraries(test_dynamic_take rcl::rcl)
-ament_target_dependencies(test_dynamic_fullflow rosidl_runtime_c rosidl_typesupport_cpp)
+target_link_libraries(test_dynamic_fullflow
+  rosidl_runtime_c::rosidl_runtime_c
+  rosidl_typesupport_cpp::rosidl_typesupport_cpp)
 
 # ============================================================================
 # Register the checks so `colcon test` runs them
