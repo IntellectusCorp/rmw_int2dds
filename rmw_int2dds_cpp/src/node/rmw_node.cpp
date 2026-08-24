@@ -426,22 +426,6 @@ rmw_destroy_node(rmw_node_t * node)
     node_data->graph_guard_condition = nullptr;
   }
 
-  // Delete this node's publisher DataWriters now to free their history caches.
-  // lyrical rclpy defers publisher teardown (Node.destroy_node ->
-  // handle.destroy_when_not_in_use), so rmw_destroy_publisher may not run before
-  // the node/participant is gone, orphaning each cycle's DataWriter cache. The
-  // datawriter is nulled so a later rmw_destroy_publisher skips it.
-  {
-    std::lock_guard<std::mutex> lock(node_data->entities_mutex);
-    for (auto * pd : node_data->live_publishers) {
-      if (pd != nullptr && pd->datawriter != nullptr) {
-        int2dds_delete_datawriter(pd->datawriter);
-        pd->datawriter = nullptr;
-      }
-    }
-    node_data->live_publishers.clear();
-  }
-
   // Decrement context reference count. Release the DDS resources once the last
   // node is gone instead of waiting for rmw_context_fini: a client library may
   // keep the context object alive (rclcpp holds internal references to it), so

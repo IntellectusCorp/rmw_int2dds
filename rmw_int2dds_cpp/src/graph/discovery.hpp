@@ -34,14 +34,16 @@ rmw_ret_t init_discovery(ContextData * context_data, const char * enclave);
 // Tear down discovery: join the listener thread and release the Context.
 void fini_discovery(ContextData * context_data);
 
+// Register / unregister the SEDP endpoint-discovery push consumer on the core
+// participant. enable also seeds already-discovered endpoints (bootstrap).
+void enable_endpoint_push(ContextData * context_data);
+void disable_endpoint_push(ContextData * context_data);
+
 // Register / withdraw a locally-created endpoint in the standard rmw_dds_common
 // GraphCache entity layer (topic name + type), keyed by its DDS endpoint GUID
 // (`gid`). The node-association layer is handled separately by the caller via
 // the rmw_dds_common Context add_*_graph / remove_*_graph helpers. No-ops when
 // the common discovery context is absent.
-// `service_type_hash` is only meaningful for service/client endpoints: on ROS 2
-// Lyrical+ the GraphCache records it so rmw_get_clients/servers_info_by_service
-// reports it; on older distros it is ignored.
 void common_add_local_entity(
   ContextData * context_data,
   const rmw_gid_t & gid,
@@ -49,8 +51,7 @@ void common_add_local_entity(
   const std::string & type_name,
   const rosidl_type_hash_t & type_hash,
   const rmw_qos_profile_t & qos,
-  bool is_reader,
-  const rosidl_type_hash_t * service_type_hash = nullptr);
+  bool is_reader);
 void common_remove_local_entity(
   ContextData * context_data,
   const rmw_gid_t & gid,

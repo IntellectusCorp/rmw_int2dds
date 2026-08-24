@@ -41,6 +41,7 @@
 #include "int2dds-ffi.h"  // NOLINT(build/include_subdir): vendored FFI header
 #include "rmw_int2dds_cpp/identifier.hpp"
 #include "rmw_int2dds_cpp/types.hpp"
+#include "../wait/waitset_registry.hpp"  // NOLINT(build/include)
 #include "../common/listeners.hpp"  // NOLINT(build/include_subdir)
 #include "../graph/graph_guard.hpp"
 #include "../graph/discovery.hpp"
@@ -100,16 +101,11 @@ int32_t
 liveliness_to_int2dds(rmw_qos_liveliness_policy_t liveliness)
 {
   switch (liveliness) {
-// ROS 2 Lyrical removed the deprecated MANUAL_BY_NODE policy (rmw 7.10). Enum
-// values are invisible to __has_include, so detect Lyrical+ via a header
-// introduced in the same release.
-#if !__has_include("rmw/get_service_endpoint_info.h")
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
     case RMW_QOS_POLICY_LIVELINESS_MANUAL_BY_NODE:
 #pragma GCC diagnostic pop
       return INT2DDS_QOS_LIVELINESS_MANUAL_BY_PARTICIPANT;
-#endif
     case RMW_QOS_POLICY_LIVELINESS_MANUAL_BY_TOPIC:
       return INT2DDS_QOS_LIVELINESS_MANUAL_BY_TOPIC;
     case RMW_QOS_POLICY_LIVELINESS_AUTOMATIC:
@@ -621,7 +617,6 @@ rmw_create_publisher(
   {
     std::lock_guard<std::mutex> lock(node_data->entities_mutex);
     node_data->publishers.push_back(pub_data->gid);
-    node_data->live_publishers.push_back(pub_data);
   }
 
   // Listener starts with an empty mask; refreshed when user callbacks register
@@ -686,13 +681,6 @@ rmw_destroy_publisher(rmw_node_t * node, rmw_publisher_t * publisher)
         break;
       }
     }
-    auto & lpubs = node_data->live_publishers;
-    for (auto it = lpubs.begin(); it != lpubs.end(); ++it) {
-      if (*it == pub_data) {
-        lpubs.erase(it);
-        break;
-      }
-    }
   }
 
   // Notify graph-change waiters that this publisher was removed.
@@ -708,6 +696,7 @@ rmw_destroy_publisher(rmw_node_t * node, rmw_publisher_t * publisher)
   }
 
   // Delete DDS entities
+  rmw_int2dds_cpp::waitset_registry_clean_caches();
   if (pub_data->status_condition != nullptr) {
     int2dds_statuscondition_delete(pub_data->status_condition);
     pub_data->status_condition = nullptr;

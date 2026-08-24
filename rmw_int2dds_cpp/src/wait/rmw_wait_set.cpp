@@ -16,9 +16,12 @@
 #include "rmw/allocators.h"
 #include "rmw/error_handling.h"
 
+#include <mutex>
+
 #include "int2dds-ffi.h"  // NOLINT(build/include_subdir): vendored FFI header
 #include "rmw_int2dds_cpp/identifier.hpp"
 #include "rmw_int2dds_cpp/types.hpp"
+#include "waitset_registry.hpp"  // NOLINT(build/include_subdir)
 
 extern "C"
 {
@@ -61,20 +64,24 @@ rmw_create_wait_set(rmw_context_t * context, size_t max_conditions)
   wait_set->implementation_identifier = rmw_int2dds_cpp::implementation_identifier;
   wait_set->data = ws_data;
 
+  if (!rmw_int2dds_cpp::waitset_registry_add(ws_data)) {
+    // Without a registry entry a later clean_caches could not see this wait set,
+    // so fail creation instead of leaking an unregistered wait set.
+    int2dds_waitset_delete(ws_data->waitset);
+    delete ws_data;
+    rmw_wait_set_free(wait_set);
+    RMW_SET_ERROR_MSG("failed to register wait set");
+    return nullptr;
+  }
+
   return wait_set;
 }
 
 rmw_ret_t
 rmw_destroy_wait_set(rmw_wait_set_t * wait_set)
 {
-// The conformance suite's expectation for a null wait_set changed across
-// distros: Jazzy expects RMW_RET_ERROR, Lyrical expects RMW_RET_INVALID_ARGUMENT
-// (detected via a header introduced in the same release).
-#if __has_include("rmw/get_service_endpoint_info.h")
-  RMW_CHECK_ARGUMENT_FOR_NULL(wait_set, RMW_RET_INVALID_ARGUMENT);
-#else
+  // The RMW conformance suite expects RMW_RET_ERROR (not INVALID_ARGUMENT) here.
   RMW_CHECK_ARGUMENT_FOR_NULL(wait_set, RMW_RET_ERROR);
-#endif
 
   if (wait_set->implementation_identifier != rmw_int2dds_cpp::implementation_identifier) {
     RMW_SET_ERROR_MSG("wait set not from this implementation");
@@ -83,6 +90,14 @@ rmw_destroy_wait_set(rmw_wait_set_t * wait_set)
 
   auto * ws_data = static_cast<rmw_int2dds_cpp::WaitSetData *>(wait_set->data);
   if (ws_data != nullptr) {
+    // Detach while still registered: a concurrent entity destroy's clean_caches
+    // serializes on ws_data->lock and cannot free a condition mid-detach.
+    {
+      std::lock_guard<std::mutex> lock(ws_data->lock);
+      rmw_int2dds_cpp::waitset_detach_all(ws_data);
+    }
+    rmw_int2dds_cpp::waitset_registry_remove(ws_data);
+
     if (ws_data->waitset != nullptr) {
       int2dds_waitset_delete(ws_data->waitset);
     }

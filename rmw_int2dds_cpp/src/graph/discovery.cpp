@@ -17,12 +17,14 @@
 #include <chrono>
 #include <cstring>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <thread>
 #include <tuple>
 #include <vector>
 
 #include "rcutils/allocator.h"
+#include "rcutils/logging_macros.h"
 
 #include "rmw/allocators.h"
 #include "rmw/error_handling.h"
@@ -78,7 +80,7 @@ rmw_ret_t publish_entities_info(
   ret = rmw_serialize(msg, type_support, &serialized);
   if (ret == RMW_RET_OK) {
     const Int2DdsRet wret = int2dds_datawriter_write_serialized(
-      writer, serialized.buffer, serialized.buffer_length, nullptr, 0);
+      writer, serialized.buffer, serialized.buffer_length);
     if (wret != INT2DDS_RET_OK) {
       ret = RMW_RET_ERROR;
     }
@@ -100,6 +102,34 @@ void listener_loop(
     bool valid = false;
     const Int2DdsRet take = int2dds_datareader_take_serialized(
       context_data->discovery_reader, buffer.data(), buffer.size(), &actual_size, &valid);
+
+    // A sample larger than our buffer stays in the reader cache, and this reader is
+    // KEEP_ALL: retrying at the same size would spin on that one sample forever and
+    // block every participant queued behind it. Grow to the size the FFI reports and
+    // take again instead.
+    if (take == INT2DDS_RET_BUFFER_TOO_SMALL) {
+      // Only grow, and only within reason. Retrying without a bigger buffer would
+      // spin this thread at full speed - the very failure mode the growth is here
+      // to remove - and an implausible length must not turn into a huge
+      // allocation whose bad_alloc escapes the listener thread.
+      constexpr uintptr_t kMaxDiscoverySampleBytes = 16u * 1024u * 1024u;
+      if (actual_size <= buffer.size() || actual_size > kMaxDiscoverySampleBytes) {
+        RCUTILS_LOG_ERROR_NAMED(
+          "rmw_int2dds_cpp",
+          "discovery reader reported an unusable sample size %zu (buffer is %zu); "
+          "dropping this take",
+          static_cast<size_t>(actual_size), buffer.size());
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
+        continue;
+      }
+      RCUTILS_LOG_WARN_NAMED(
+        "rmw_int2dds_cpp",
+        "discovery sample needs %zu bytes, buffer is %zu; growing",
+        static_cast<size_t>(actual_size), buffer.size());
+      buffer.resize(actual_size);
+      continue;
+    }
+
     if (take != INT2DDS_RET_OK || !valid || actual_size == 0) {
       std::this_thread::sleep_for(std::chrono::milliseconds(20));
       continue;
@@ -257,6 +287,9 @@ rmw_ret_t init_discovery(ContextData * context_data, const char * enclave)
   context_data->common->listener_thread =
     std::thread(listener_loop, context_data, type_support);
 
+  // Consume core SEDP endpoint discovery incrementally (and bootstrap current state).
+  enable_endpoint_push(context_data);
+
   return RMW_RET_OK;
 }
 
@@ -265,6 +298,8 @@ void fini_discovery(ContextData * context_data)
   if (context_data == nullptr) {
     return;
   }
+  // Stop new callbacks from touching context_data before we tear it down.
+  disable_endpoint_push(context_data);
   // Stop and join the listener thread before destroying the reader it polls.
   if (context_data->common) {
     context_data->common->graph_cache.set_on_change_callback(nullptr);
@@ -289,7 +324,12 @@ void fini_discovery(ContextData * context_data)
     rmw_publisher_free(context_data->common->pub);
     context_data->common->pub = nullptr;
   }
-  context_data->common.reset();
+  // Hold remote_sync_mutex: an endpoint-discovery callback still in flight reads
+  // context_data->common, and resetting it out from under one would crash.
+  {
+    std::lock_guard<std::mutex> lock(context_data->remote_sync_mutex);
+    context_data->common.reset();
+  }
 }
 
 void common_add_local_entity(
@@ -299,8 +339,7 @@ void common_add_local_entity(
   const std::string & type_name,
   const rosidl_type_hash_t & type_hash,
   const rmw_qos_profile_t & qos,
-  bool is_reader,
-  const rosidl_type_hash_t * service_type_hash)
+  bool is_reader)
 {
   if (context_data == nullptr || !context_data->common) {
     return;
@@ -308,18 +347,9 @@ void common_add_local_entity(
   // type_hash is carried so get_*_info_by_topic reports the real topic type hash.
   // The entity is keyed by its DDS GUID so it correlates with the remote view
   // (ros_discovery_info associations + SEDP entity discovery).
-#if __has_include("rmw/get_service_endpoint_info.h")
-  // Lyrical's GraphCache additionally associates service endpoints by service
-  // type hash for rmw_get_clients/servers_info_by_service.
-  context_data->common->graph_cache.add_entity(
-    gid, dds_topic_name, type_name, type_hash,
-    context_data->common->gid, qos, is_reader, service_type_hash);
-#else
-  (void)service_type_hash;
   context_data->common->graph_cache.add_entity(
     gid, dds_topic_name, type_name, type_hash,
     context_data->common->gid, qos, is_reader);
-#endif
 }
 
 void common_remove_local_entity(

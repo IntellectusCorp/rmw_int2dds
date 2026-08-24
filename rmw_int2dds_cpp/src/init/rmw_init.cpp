@@ -13,8 +13,10 @@
 // limitations under the License.
 
 #include <cstdint>
+#include <cstdlib>
 #include <string>
 #include <tuple>
+
 #include "rmw/rmw.h"
 #include "rmw/error_handling.h"
 #include "rmw/init.h"
@@ -26,13 +28,6 @@
 #define RMW_INT2DDS_HAS_DISCOVERY_OPTIONS 1
 #endif
 
-// ROS 2 Kilted moved enclave string ownership behind dedicated helpers
-// (ros2/rmw#393); test_rmw_implementation manages enclaves through them.
-#if __has_include("rmw/enclave.h")
-#define RMW_INT2DDS_HAS_ENCLAVE_OPTIONS 1
-#include "rmw/enclave.h"
-#endif
-
 #include "rcutils/allocator.h"
 #include "rcutils/strdup.h"
 
@@ -40,6 +35,7 @@
 #include "rmw_int2dds_cpp/identifier.hpp"
 #include "rmw_int2dds_cpp/types.hpp"
 #include "../graph/discovery.hpp"
+#include "../wait/waitset_registry.hpp"
 
 namespace rmw_int2dds_cpp
 {
@@ -55,6 +51,9 @@ release_context_resources(ContextData * context_data)
     fini_discovery(context_data);
   }
   if (context_data->graph_guard_condition != nullptr) {
+    // Defensive: make sure no wait set still references this guard before freeing
+    // it, covering out-of-contract teardown where the context outlives a wait set.
+    waitset_registry_clean_caches();
     int2dds_guardcondition_delete(context_data->graph_guard_condition);
     context_data->graph_guard_condition = nullptr;
   }
@@ -254,12 +253,7 @@ rmw_init_options_init(
   init_options->enclave = nullptr;
   init_options->domain_id = RMW_DEFAULT_DOMAIN_ID;
   init_options->security_options = rmw_get_default_security_options();
-  init_options->discovery_options = rmw_get_zero_initialized_discovery_options();
-#if __has_include("rmw/localhost.h")
-  // ROS 2 Kilted removed rmw_localhost_only_t and this init-options field
-  // (ros2/rmw#376); localhost behavior is expressed via discovery_options there.
   init_options->localhost_only = RMW_LOCALHOST_ONLY_DEFAULT;
-#endif
 
   return RMW_RET_OK;
 }
@@ -290,19 +284,10 @@ rmw_init_options_copy(
   *dst = *src;
 
   if (src->enclave != nullptr) {
-#ifdef RMW_INT2DDS_HAS_ENCLAVE_OPTIONS
-    dst->enclave = nullptr;
-    const rmw_ret_t enclave_ret =
-      rmw_enclave_options_copy(src->enclave, &src->allocator, &dst->enclave);
-    if (enclave_ret != RMW_RET_OK) {
-      return enclave_ret;
-    }
-#else
     dst->enclave = rcutils_strdup(src->enclave, src->allocator);
     if (dst->enclave == nullptr) {
       return RMW_RET_BAD_ALLOC;
     }
-#endif
   }
 
   return RMW_RET_OK;
@@ -324,11 +309,7 @@ rmw_init_options_fini(rmw_init_options_t * init_options)
   }
 
   if (init_options->enclave != nullptr) {
-#ifdef RMW_INT2DDS_HAS_ENCLAVE_OPTIONS
-    rmw_enclave_options_fini(init_options->enclave, &init_options->allocator);
-#else
     init_options->allocator.deallocate(init_options->enclave, init_options->allocator.state);
-#endif
     init_options->enclave = nullptr;
   }
 
@@ -362,6 +343,13 @@ rmw_init(const rmw_init_options_t * options, rmw_context_t * context)
     return RMW_RET_INVALID_ARGUMENT;
   }
 
+  // Default the DATA_FRAG fragment size to 1344 bytes for writers created through
+  // this RMW, unless INT2DDS_DATA_FRAG_SIZE is already set. The int2dds core reads
+  // this env when a writer's DataFrag QoS is unset; seeding it here scopes the 1344
+  // default to the ROS/RMW path without changing the core's own default (65000).
+  // overwrite=0 preserves any user-provided value.
+  setenv("INT2DDS_DATA_FRAG_SIZE", "1344", 0);
+  setenv("INT2DDS_MAX_MESSAGE_SIZE", "13440", 0);
   // Create context data
   auto * context_data = new (std::nothrow) rmw_int2dds_cpp::ContextData();
   if (context_data == nullptr) {
@@ -375,10 +363,10 @@ rmw_init(const rmw_init_options_t * options, rmw_context_t * context)
     actual_domain_id = 0;  // Default to domain 0
   }
   context_data->domain_id = actual_domain_id;
+#ifdef RMW_INT2DDS_HAS_DISCOVERY_OPTIONS
   // Translate any user-specified static peers into the int2dds SPDP initial-peers
   // list once, while both the domain id and discovery options are in hand. Stored
   // on the context so the rmw_create_node re-acquire path reuses the same config.
-#ifdef RMW_INT2DDS_HAS_DISCOVERY_OPTIONS
   context_data->initial_peers = rmw_int2dds_cpp::build_initial_peers_string(
     options->discovery_options, actual_domain_id);
   context_data->localhost_only =

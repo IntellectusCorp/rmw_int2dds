@@ -17,11 +17,14 @@
 
 #include <array>
 #include <atomic>
+#include <condition_variable>
 #include <cstddef>
+#include <cstdint>
 #include <map>
 #include <memory>
 #include <mutex>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include "rmw/event.h"
@@ -63,7 +66,6 @@ constexpr int32_t INT2DDS_EXTENSIBILITY_MUTABLE = 2;
 // Forward declaration
 struct ServiceData;
 struct ClientData;
-struct PublisherData;
 
 /// One user event-callback registration (rmw_event_callback_t plus the backlog
 /// of occurrences that fired before the callback was set). Fired from int2dds
@@ -151,7 +153,6 @@ struct NodeData
   std::vector<rmw_gid_t> clients;
   std::vector<ServiceData *> live_services;
   std::vector<ClientData *> live_clients;
-  std::vector<PublisherData *> live_publishers;
 };
 
 /// Publisher implementation data
@@ -250,16 +251,41 @@ struct GuardConditionData
 };
 
 /// Wait set implementation data
+// Identity of an event cached by a wait set: the entity data pointer plus the
+// event type, since rmw_event_t wrappers are not stable across rmw_wait calls.
+struct WaitSetCachedEvent
+{
+  void * entity_data{nullptr};
+  rmw_event_type_t event_type{RMW_EVENT_INVALID};
+};
+
 struct WaitSetData
 {
   Int2DdsWaitSet * waitset{nullptr};
 
-  // Tracking attached entities
-  std::vector<rmw_subscription_t *> attached_subscriptions;
-  std::vector<rmw_guard_condition_t *> attached_guard_conditions;
-  std::vector<rmw_service_t *> attached_services;
-  std::vector<rmw_client_t *> attached_clients;
-  std::vector<rmw_event_t *> attached_events;
+  // Guards the cached/attached state below against entity-destroy cache cleaning.
+  std::mutex lock;
+  std::condition_variable cache_cv;
+  bool inuse{false};
+  // True while rmw_wait reads or rewrites the cache/attachments outside the
+  // blocking FFI wait. Cleaners wait this flag out (signalled via cache_cv);
+  // it never spans int2dds_waitset_wait_ex_ns, so the wait is always short.
+  bool cache_busy{false};
+
+  // Entity data pointers from the previous rmw_wait call. When the incoming
+  // arrays are identical, the conditions attached last time are still attached
+  // and the whole attach/detach cycle is skipped.
+  std::vector<void *> cached_subscriptions;
+  std::vector<void *> cached_guard_conditions;
+  std::vector<void *> cached_services;
+  std::vector<void *> cached_clients;
+  std::vector<WaitSetCachedEvent> cached_events;
+
+  // Attached conditions, each stamped with the attach_generation that last
+  // wanted it. A rebuild detaches whatever keeps an older stamp.
+  uint64_t attach_generation{0};
+  std::unordered_map<Int2DdsStatusCondition *, uint64_t> attached_conditions;
+  std::unordered_map<Int2DdsGuardCondition *, uint64_t> attached_guards;
 };
 
 /// Service implementation data
@@ -287,6 +313,8 @@ struct ServiceData
   // DataReader listener on the request reader.
   std::mutex listener_mutex;
   CallbackSlot new_request_slot;
+  std::mutex request_take_mutex;
+  std::mutex response_write_mutex;
 };
 
 /// Client implementation data
@@ -317,6 +345,7 @@ struct ClientData
   // the executor resolves by taking nothing.
   std::mutex listener_mutex;
   CallbackSlot new_response_slot;
+  std::mutex response_take_mutex;
 };
 
 /// Event implementation data

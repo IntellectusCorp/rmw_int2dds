@@ -42,6 +42,7 @@
 #include "int2dds-ffi.h"  // NOLINT(build/include_subdir): vendored FFI header
 #include "rmw_int2dds_cpp/identifier.hpp"
 #include "rmw_int2dds_cpp/types.hpp"
+#include "../wait/waitset_registry.hpp"  // NOLINT(build/include)
 #include "../common/listeners.hpp"  // NOLINT(build/include_subdir)
 #include "../common/type_hash_qos.hpp"
 #include "../graph/graph_guard.hpp"
@@ -102,16 +103,11 @@ int32_t
 liveliness_to_int2dds(rmw_qos_liveliness_policy_t liveliness)
 {
   switch (liveliness) {
-// ROS 2 Lyrical removed the deprecated MANUAL_BY_NODE policy (rmw 7.10). Enum
-// values are invisible to __has_include, so detect Lyrical+ via a header
-// introduced in the same release.
-#if !__has_include("rmw/get_service_endpoint_info.h")
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
     case RMW_QOS_POLICY_LIVELINESS_MANUAL_BY_NODE:
 #pragma GCC diagnostic pop
       return INT2DDS_QOS_LIVELINESS_MANUAL_BY_PARTICIPANT;
-#endif
     case RMW_QOS_POLICY_LIVELINESS_MANUAL_BY_TOPIC:
       return INT2DDS_QOS_LIVELINESS_MANUAL_BY_TOPIC;
     case RMW_QOS_POLICY_LIVELINESS_AUTOMATIC:
@@ -250,9 +246,8 @@ append_field_descriptor(
     default:
       return false;
   }
-
   descriptors.names.emplace_back(name);
-  descriptors.types.push_back(static_cast<uint32_t>(field_type));
+  descriptors.types.push_back(field_type);
   descriptors.is_key.push_back(is_key ? 1U : 0U);
   descriptors.has_key = descriptors.has_key || is_key;
   return true;
@@ -604,6 +599,7 @@ destroy_subscription_reader_entities(
     return;
   }
 
+  rmw_int2dds_cpp::waitset_registry_clean_caches();
   if (sub_data->status_condition != nullptr) {
     int2dds_statuscondition_delete(sub_data->status_condition);
     sub_data->status_condition = nullptr;
@@ -927,12 +923,6 @@ rmw_create_subscription(
   subscription->options = *subscription_options;
   subscription->can_loan_messages = false;
   subscription->is_cft_enabled = !sub_data->content_filter_expression.empty();
-#if __has_include("rmw/get_service_endpoint_info.h")
-  // Lyrical+ field (rmw 7.10): int2dds creates DDS content-filtered topics natively.
-  // options.acceptable_buffer_backends (same release) needs no handling here: this
-  // RMW only ever delivers CPU buffers, and CPU is always implicitly acceptable.
-  subscription->is_cft_supported = true;
-#endif
 
   if (subscription->topic_name == nullptr) {
     rmw_subscription_free(subscription);

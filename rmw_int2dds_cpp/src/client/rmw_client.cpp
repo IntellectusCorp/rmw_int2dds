@@ -31,6 +31,7 @@
 #include "int2dds-ffi.h"  // NOLINT(build/include_subdir): vendored FFI header
 #include "rmw_int2dds_cpp/identifier.hpp"
 #include "rmw_int2dds_cpp/types.hpp"
+#include "../wait/waitset_registry.hpp"  // NOLINT(build/include)
 #include "../common/listeners.hpp"  // NOLINT(build/include_subdir)
 #include "../graph/graph_guard.hpp"
 #include "../graph/discovery.hpp"
@@ -372,9 +373,7 @@ rmw_create_client(
   Int2DdsDataWriterQos * writer_qos = nullptr;
   int2dds_datawriter_qos_create_default(&writer_qos);
   rmw_int2dds_cpp::apply_type_hash_user_data(
-    writer_qos,
-    rmw_int2dds_cpp::encode_service_request_type_hash_user_data(introspection_ts) +
-    rmw_int2dds_cpp::encode_service_type_hash_user_data(introspection_ts));
+    writer_qos, rmw_int2dds_cpp::encode_service_request_type_hash_user_data(introspection_ts));
   set_writer_reliability_durability(writer_qos, cli_data->qos);
   set_writer_deadline_lifespan_liveliness(writer_qos, cli_data->qos);
   set_writer_history(writer_qos, cli_data->qos);
@@ -401,9 +400,7 @@ rmw_create_client(
   Int2DdsDataReaderQos * reader_qos = nullptr;
   int2dds_datareader_qos_create_default(&reader_qos);
   rmw_int2dds_cpp::apply_type_hash_user_data(
-    reader_qos,
-    rmw_int2dds_cpp::encode_service_response_type_hash_user_data(introspection_ts) +
-    rmw_int2dds_cpp::encode_service_type_hash_user_data(introspection_ts));
+    reader_qos, rmw_int2dds_cpp::encode_service_response_type_hash_user_data(introspection_ts));
   set_reader_reliability_durability(reader_qos, cli_data->qos);
   set_reader_deadline_liveliness(reader_qos, cli_data->qos);
   set_reader_history(reader_qos, cli_data->qos);
@@ -482,12 +479,10 @@ rmw_create_client(
     }
     rmw_int2dds_cpp::common_add_local_entity(
       context_data, request_writer_gid, request_topic_name, request_type_name,
-      rosidl_type_hash_t{}, cli_data->qos, /*is_reader=*/false,
-      rmw_int2dds_cpp::get_service_type_hash(introspection_ts));
+      rosidl_type_hash_t{}, cli_data->qos, /*is_reader=*/false);
     rmw_int2dds_cpp::common_add_local_entity(
       context_data, response_reader_gid, response_topic_name, response_type_name,
-      rosidl_type_hash_t{}, cli_data->qos, /*is_reader=*/true,
-      rmw_int2dds_cpp::get_service_type_hash(introspection_ts));
+      rosidl_type_hash_t{}, cli_data->qos, /*is_reader=*/true);
     context_data->common->add_client_graph(
       request_writer_gid, response_reader_gid, node_data->name, node_data->namespace_);
   }
@@ -563,6 +558,7 @@ rmw_destroy_client(rmw_node_t * node, rmw_client_t * client)
     }
 
     // Delete DDS entities
+    rmw_int2dds_cpp::waitset_registry_clean_caches();
     if (cli_data->response_status_condition != nullptr) {
       int2dds_statuscondition_delete(cli_data->response_status_condition);
       cli_data->response_status_condition = nullptr;
@@ -578,6 +574,16 @@ rmw_destroy_client(rmw_node_t * node, rmw_client_t * client)
     }
     if (cli_data->request_topic != nullptr) {
       int2dds_delete_topic(cli_data->request_topic);
+    }
+  } else {
+    // The detach path released and nulled the reader/writer/topics but left
+    // response_status_condition live and cli_data still referenced by any
+    // wait-set cache. Clean the caches and release the condition before cli_data
+    // is freed (no double free: the detach path never touched the condition).
+    rmw_int2dds_cpp::waitset_registry_clean_caches();
+    if (cli_data->response_status_condition != nullptr) {
+      int2dds_statuscondition_delete(cli_data->response_status_condition);
+      cli_data->response_status_condition = nullptr;
     }
   }
 

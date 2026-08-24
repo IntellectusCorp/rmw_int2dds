@@ -29,22 +29,49 @@
   <depend>rosidl_runtime_c</depend>
   <depend>rosidl_runtime_cpp</depend>
 
-  <!-- Type support packages (introspection-based) -->
+  <!-- Type support packages. The introspection ones carry the type support this
+       RMW consumes; rosidl_typesupport_c/cpp provide the dispatch layer that
+       CMakeLists.txt find_package()es directly. Those two currently arrive anyway
+       as apt dependencies of std_msgs, but leaning on that is exactly how the ROS
+       build farm breaks - it installs only what is declared here. -->
   <depend>rosidl_typesupport_introspection_c</depend>
   <depend>rosidl_typesupport_introspection_cpp</depend>
+  <depend>rosidl_typesupport_c</depend>
+  <depend>rosidl_typesupport_cpp</depend>
 
-  <!-- Used by the in-repo validation/probe executables -->
+  <!-- Backs rmw_take_dynamic_message and the serialization support vtable.
+       Present from Iron on, so it is a plain depend: probing it QUIET and leaving
+       it undeclared is how a build-farm .deb ends up without dynamic message
+       support and no error to show for it. -->
+  <depend>rosidl_dynamic_typesupport</depend>
+
+  <!-- Message type used by the event smoke/validation executables under test/.
+       The rclcpp-based probes and the dynamic message checks moved to
+       rmw_int2dds_validation, which is why rclcpp, rcl, geometry_msgs,
+       diagnostic_msgs and rclpy are no longer declared here. -->
   <depend>std_msgs</depend>
 
-  <!-- Prebuilt int2DDS FFI library (downloaded + exported by the vendor pkg) -->
+  <!-- Prebuilt int2DDS FFI library (downloaded + exported by the vendor pkg).
+       No version range: int2dds_ffi_vendor is released from this repository, and
+       catkin_prepare_release forces every package here to carry the same version.
+       A version_lt would therefore go unsatisfiable the moment the repo rolls to
+       the next minor, and it never guarded the FFI ABI anyway - the vendor package
+       version and INT2DDS_FFI_VERSION move independently. The FFI version is
+       pinned in one place: INT2DDS_FFI_VERSION in int2dds_ffi_vendor/CMakeLists.txt. -->
   <depend>int2dds_ffi_vendor</depend>
 
-  <!-- Lint / test -->
+  <!-- Lint / test. ament_cmake_cpplint and ament_cmake_flake8 come along with
+       ament_lint_common, but CMakeLists.txt find_package()es them directly in
+       order to call ament_cpplint()/ament_flake8() with explicit paths, so they
+       are declared rather than assumed. Same for ament_cmake_test, which
+       registers the standalone checks under test/. -->
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend>
+  <test_depend>ament_cmake_cpplint</test_depend>
+  <test_depend>ament_cmake_flake8</test_depend>
+  <test_depend>ament_cmake_test</test_depend>
   <test_depend>ament_cmake_gtest</test_depend>
   <test_depend>test_msgs</test_depend>
-  <test_depend>test_rmw_implementation</test_depend>
 
   <!-- Mark this package as an RMW implementation so rmw_implementation builds it -->
   <member_of_group>rmw_implementation_packages</member_of_group>

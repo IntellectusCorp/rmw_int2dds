@@ -1,26 +1,17 @@
 cmake_minimum_required(VERSION 3.14)
 project(rmw_int2dds_cpp)
 
-# C++20: platform minimum since ROS 2 Kilted (REP 2000); Jazzy toolchains accept it too.
-set(CMAKE_CXX_STANDARD 20)
+# C++17 standard
+set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# The matched-event smoke executable exercises APIs that are not present in
-# ROS 2 Humble's rmw headers. Keep that target opt-in on Humble while building
-# the Humble-compatible event validation target normally.
-if("$ENV{ROS_DISTRO}" STREQUAL "humble")
-  set(RMW_INT2DDS_BUILD_MATCHED_EVENT_TESTS_DEFAULT OFF)
-else()
-  set(RMW_INT2DDS_BUILD_MATCHED_EVENT_TESTS_DEFAULT ON)
-endif()
 option(
   RMW_INT2DDS_BUILD_EVENT_VALIDATION
   "Build RMW event validation executable"
   ON)
-option(
-  RMW_INT2DDS_BUILD_MATCHED_EVENT_TESTS
-  "Build matched-event smoke executable that depends on newer RMW matched-event APIs"
-  ${RMW_INT2DDS_BUILD_MATCHED_EVENT_TESTS_DEFAULT})
+# RMW_INT2DDS_BUILD_MATCHED_EVENT_TESTS is declared further down, after
+# find_package(rmw): its default is probed from the installed rmw headers rather
+# than guessed from the environment.
 
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   add_compile_options(-Wall -Wextra -Wpedantic)
@@ -36,11 +27,55 @@ find_package(rosidl_typesupport_introspection_c REQUIRED)
 find_package(rosidl_typesupport_introspection_cpp REQUIRED)
 find_package(rosidl_typesupport_c REQUIRED)
 find_package(rosidl_typesupport_cpp REQUIRED)
-# Optional: dynamic message type support (C3). Present on Iron+; absent on Humble.
-find_package(rosidl_dynamic_typesupport QUIET)
+# Dynamic message type support. Present from Iron on, so REQUIRED here: it used
+# to be probed QUIET and undeclared, which let a build-farm job drop it without a
+# word and ship a .deb with no dynamic message support at all.
+find_package(rosidl_dynamic_typesupport REQUIRED)
 find_package(rmw_dds_common REQUIRED)
-find_package(rclcpp REQUIRED)
 find_package(std_msgs REQUIRED)
+
+# NOTE: rclcpp and rcl are deliberately absent from this package. They sit ABOVE
+# it in the ROS 2 stack:
+#
+#   rclcpp -> rcl -> rmw_implementation -> rmw_int2dds_cpp
+#                    (via the rmw_implementation_packages group)
+#
+# Depending on either would close a build dependency cycle and drag the whole
+# client library stack into an RMW plugin. No upstream RMW implementation does
+# it (rmw_fastrtps, rmw_cyclonedds, rmw_connextdds, rmw_zenoh: zero references).
+# The rclcpp-based QoS/perf probes live in the sibling rmw_int2dds_validation
+# package instead, mirroring test_rmw_zenoh_cpp in ros2/rmw_zenoh.
+
+# The matched-event smoke executable is built entirely on rmw matched-event APIs
+# that only exist in newer rmw headers, so ask the headers whether they are there
+# - the same question test_event_validation.cpp asks with __has_include.
+#
+# It must NOT be inferred from $ENV{ROS_DISTRO}: ros_environment is the only
+# package that exports that variable, so anywhere it is not installed the
+# variable is empty and a distro comparison silently picks whichever branch that
+# happens to select. The rmw headers are the thing the code actually depends on,
+# so probe those instead.
+#
+# NO_DEFAULT_PATH keeps the search inside the rmw package that was just found; a
+# stray matched.h reachable through CMAKE_PREFIX_PATH must not answer for it.
+find_file(RMW_INT2DDS_MATCHED_EVENT_HEADER
+  NAMES rmw/events_statuses/matched.h
+  HINTS ${rmw_INCLUDE_DIRS}
+  NO_DEFAULT_PATH)
+mark_as_advanced(RMW_INT2DDS_MATCHED_EVENT_HEADER)
+if(RMW_INT2DDS_MATCHED_EVENT_HEADER)
+  set(RMW_INT2DDS_BUILD_MATCHED_EVENT_TESTS_DEFAULT ON)
+  message(STATUS "rmw matched-event API found: ${RMW_INT2DDS_MATCHED_EVENT_HEADER}")
+else()
+  set(RMW_INT2DDS_BUILD_MATCHED_EVENT_TESTS_DEFAULT OFF)
+  message(STATUS
+    "rmw matched-event API not available (searched: ${rmw_INCLUDE_DIRS}) - "
+    "the matched-event smoke target is disabled for this rmw version.")
+endif()
+option(
+  RMW_INT2DDS_BUILD_MATCHED_EVENT_TESTS
+  "Build matched-event smoke executable that depends on newer RMW matched-event APIs"
+  ${RMW_INT2DDS_BUILD_MATCHED_EVENT_TESTS_DEFAULT})
 
 # ============================================================================
 # int2dds-ffi library
@@ -86,6 +121,7 @@ add_library(rmw_int2dds_cpp SHARED
   # Wait set
   src/wait/rmw_wait.cpp
   src/wait/rmw_wait_set.cpp
+  src/wait/waitset_registry.cpp
 
   # Service
   src/service/rmw_service.cpp
@@ -125,27 +161,23 @@ target_include_directories(rmw_int2dds_cpp PUBLIC
   $<INSTALL_INTERFACE:include>
 )
 
-# ament_target_dependencies() was removed from ament_cmake in ROS 2 Lyrical;
-# link the modern namespaced targets directly (they carry their include dirs).
-target_link_libraries(rmw_int2dds_cpp PUBLIC
+target_link_libraries(rmw_int2dds_cpp
   int2dds_ffi::int2dds_ffi
+  rosidl_dynamic_typesupport::rosidl_dynamic_typesupport
   ${PLATFORM_LIBS}
-  rcutils::rcutils
-  rmw::rmw
-  rosidl_runtime_c::rosidl_runtime_c
-  rosidl_runtime_cpp::rosidl_runtime_cpp
-  rosidl_typesupport_introspection_c::rosidl_typesupport_introspection_c
-  rosidl_typesupport_introspection_cpp::rosidl_typesupport_introspection_cpp
-  rosidl_typesupport_c::rosidl_typesupport_c
-  rosidl_typesupport_cpp::rosidl_typesupport_cpp
-  rmw_dds_common::rmw_dds_common_library
 )
 
-# Dynamic message type support (C3): link when available (Iron+).
-if(rosidl_dynamic_typesupport_FOUND)
-  target_link_libraries(rmw_int2dds_cpp PUBLIC
-    rosidl_dynamic_typesupport::rosidl_dynamic_typesupport)
-endif()
+ament_target_dependencies(rmw_int2dds_cpp
+  rcutils
+  rmw
+  rosidl_runtime_c
+  rosidl_runtime_cpp
+  rosidl_typesupport_introspection_c
+  rosidl_typesupport_introspection_cpp
+  rosidl_typesupport_c
+  rosidl_typesupport_cpp
+  rmw_dds_common
+)
 
 # Configure as RMW library
 configure_rmw_library(rmw_int2dds_cpp)
@@ -163,230 +195,36 @@ add_executable(test_connection test/test_connection.cpp)
 target_include_directories(test_connection PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(test_connection int2dds_ffi::int2dds_ffi ${PLATFORM_LIBS})
 
-# C3 foundation check: int2dds dynamic type build + primitive sample read.
-add_executable(test_dynamic_message test/test_dynamic_message.cpp)
-target_include_directories(test_dynamic_message PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
-target_link_libraries(test_dynamic_message
-  rclcpp::rclcpp
-  ${std_msgs_TARGETS}
-  int2dds_ffi::int2dds_ffi
-  rmw_int2dds_cpp
-)
-if(rosidl_dynamic_typesupport_FOUND)
-  target_link_libraries(test_dynamic_message
-    rosidl_dynamic_typesupport::rosidl_dynamic_typesupport)
-endif()
-find_package(geometry_msgs QUIET)
-if(geometry_msgs_FOUND)
-  target_link_libraries(test_dynamic_message ${geometry_msgs_TARGETS})
-endif()
-find_package(test_msgs QUIET)
-if(test_msgs_FOUND)
-  target_link_libraries(test_dynamic_message ${test_msgs_TARGETS})
-endif()
-find_package(diagnostic_msgs QUIET)
-if(diagnostic_msgs_FOUND)
-  target_link_libraries(test_dynamic_message ${diagnostic_msgs_TARGETS})
-endif()
-
-# C3 full-flow check: build the dynamic type from a generated TypeDescription (the ROS
-# runtime path) then deserialize and read.
-if(rosidl_dynamic_typesupport_FOUND AND test_msgs_FOUND)
-  add_executable(test_dynamic_fullflow test/test_dynamic_fullflow.cpp)
-  target_include_directories(test_dynamic_fullflow PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
-  target_link_libraries(test_dynamic_fullflow
-    rclcpp::rclcpp
-    int2dds_ffi::int2dds_ffi
-    rmw_int2dds_cpp
-    rosidl_dynamic_typesupport::rosidl_dynamic_typesupport
-    ${test_msgs_TARGETS}
-  )
-endif()
-
-# C3 receive-path check: publish then pull back via rmw_take_dynamic_message.
-find_package(rcl QUIET)
-if(rosidl_dynamic_typesupport_FOUND AND diagnostic_msgs_FOUND AND rcl_FOUND)
-  add_executable(test_dynamic_take test/test_dynamic_take.cpp)
-  target_include_directories(test_dynamic_take PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
-  target_link_libraries(test_dynamic_take
-    rclcpp::rclcpp
-    rcl::rcl
-    int2dds_ffi::int2dds_ffi
-    rmw_int2dds_cpp
-    rosidl_dynamic_typesupport::rosidl_dynamic_typesupport
-    ${diagnostic_msgs_TARGETS}
-  )
-endif()
-
-# D4: batch take_sequence functional check.
-if(rcl_FOUND)
-  add_executable(test_take_sequence test/test_take_sequence.cpp)
-  target_include_directories(test_take_sequence PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
-  target_link_libraries(test_take_sequence
-    rclcpp::rclcpp
-    rcl::rcl
-    ${std_msgs_TARGETS}
-    rmw_int2dds_cpp
-  )
-endif()
+# D4: the batch take_sequence functional check needs rclcpp and rcl, so it lives
+# in the rmw_int2dds_validation package.
 
 if(RMW_INT2DDS_BUILD_MATCHED_EVENT_TESTS)
   add_executable(test_event_smoke test/test_event_smoke.cpp)
   target_include_directories(test_event_smoke PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
-  target_link_libraries(test_event_smoke
-    rmw_int2dds_cpp
-    int2dds_ffi::int2dds_ffi
-    ${PLATFORM_LIBS}
-    rcutils::rcutils
-    rmw::rmw
-    rosidl_runtime_cpp::rosidl_runtime_cpp
-    rosidl_typesupport_cpp::rosidl_typesupport_cpp
-    ${std_msgs_TARGETS}
+  target_link_libraries(test_event_smoke rmw_int2dds_cpp int2dds_ffi::int2dds_ffi ${PLATFORM_LIBS})
+  ament_target_dependencies(test_event_smoke
+    rcutils
+    rmw
+    rosidl_runtime_cpp
+    rosidl_typesupport_cpp
+    std_msgs
   )
 endif()
 
 if(RMW_INT2DDS_BUILD_EVENT_VALIDATION)
   add_executable(test_event_validation test/test_event_validation.cpp)
   target_include_directories(test_event_validation PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
-  target_link_libraries(test_event_validation
-    rmw_int2dds_cpp
-    int2dds_ffi::int2dds_ffi
-    ${PLATFORM_LIBS}
-    rcutils::rcutils
-    rmw::rmw
-    rclcpp::rclcpp
-    rosidl_runtime_cpp::rosidl_runtime_cpp
-    rosidl_typesupport_cpp::rosidl_typesupport_cpp
-    ${std_msgs_TARGETS}
+  target_link_libraries(test_event_validation rmw_int2dds_cpp int2dds_ffi::int2dds_ffi ${PLATFORM_LIBS})
+  # test_event_validation.cpp drives the rmw C API directly - it includes no
+  # rclcpp header, so rclcpp was never a real dependency of this target.
+  ament_target_dependencies(test_event_validation
+    rcutils
+    rmw
+    rosidl_runtime_cpp
+    rosidl_typesupport_cpp
+    std_msgs
   )
 endif()
-
-add_executable(qos_durability_sub_cpp validation/qos/durability/rclcpp/qos_durability_sub.cpp)
-target_include_directories(qos_durability_sub_cpp PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
-target_link_libraries(qos_durability_sub_cpp
-  rclcpp::rclcpp
-  ${std_msgs_TARGETS}
-)
-
-add_executable(qos_durability_pub_cpp validation/qos/durability/rclcpp/qos_durability_pub.cpp)
-target_include_directories(qos_durability_pub_cpp PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
-target_link_libraries(qos_durability_pub_cpp
-  rclcpp::rclcpp
-  ${std_msgs_TARGETS}
-)
-
-add_executable(qos_history_depth_sub_cpp validation/qos/history_depth/rclcpp/qos_history_depth_sub.cpp)
-target_include_directories(qos_history_depth_sub_cpp PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
-target_link_libraries(qos_history_depth_sub_cpp
-  rclcpp::rclcpp
-  ${std_msgs_TARGETS}
-)
-
-add_executable(qos_history_depth_pub_cpp validation/qos/history_depth/rclcpp/qos_history_depth_pub.cpp)
-target_include_directories(qos_history_depth_pub_cpp PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
-target_link_libraries(qos_history_depth_pub_cpp
-  rclcpp::rclcpp
-  ${std_msgs_TARGETS}
-)
-
-add_executable(qos_deadline_sub_cpp validation/qos/deadline/rclcpp/qos_deadline_sub.cpp)
-target_include_directories(qos_deadline_sub_cpp PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
-target_link_libraries(qos_deadline_sub_cpp
-  rclcpp::rclcpp
-  ${std_msgs_TARGETS}
-)
-
-add_executable(qos_deadline_pub_cpp validation/qos/deadline/rclcpp/qos_deadline_pub.cpp)
-target_include_directories(qos_deadline_pub_cpp PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
-target_link_libraries(qos_deadline_pub_cpp
-  rclcpp::rclcpp
-  ${std_msgs_TARGETS}
-)
-
-add_executable(qos_liveliness_sub_cpp validation/qos/liveliness/rclcpp/qos_liveliness_sub.cpp)
-target_include_directories(qos_liveliness_sub_cpp PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
-target_link_libraries(qos_liveliness_sub_cpp
-  rclcpp::rclcpp
-  ${std_msgs_TARGETS}
-)
-
-add_executable(qos_liveliness_pub_cpp validation/qos/liveliness/rclcpp/qos_liveliness_pub.cpp)
-target_include_directories(qos_liveliness_pub_cpp PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
-target_link_libraries(qos_liveliness_pub_cpp
-  rclcpp::rclcpp
-  ${std_msgs_TARGETS}
-)
-
-add_executable(qos_lifespan_sub_cpp validation/qos/lifespan/rclcpp/qos_lifespan_sub.cpp)
-target_include_directories(qos_lifespan_sub_cpp PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
-target_link_libraries(qos_lifespan_sub_cpp
-  rclcpp::rclcpp
-  ${std_msgs_TARGETS}
-)
-
-add_executable(qos_lifespan_pub_cpp validation/qos/lifespan/rclcpp/qos_lifespan_pub.cpp)
-target_include_directories(qos_lifespan_pub_cpp PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
-target_link_libraries(qos_lifespan_pub_cpp
-  rclcpp::rclcpp
-  ${std_msgs_TARGETS}
-)
-
-add_executable(content_filter_lifecycle_check_cpp
-  validation/cft/rclcpp/content_filter_lifecycle_check.cpp)
-target_include_directories(content_filter_lifecycle_check_cpp PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
-target_link_libraries(content_filter_lifecycle_check_cpp
-  rclcpp::rclcpp
-  ${std_msgs_TARGETS}
-)
-
-add_executable(callback_executor_smoke_cpp
-  validation/callback/rclcpp/callback_executor_smoke.cpp)
-target_include_directories(callback_executor_smoke_cpp PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
-target_link_libraries(callback_executor_smoke_cpp
-  rclcpp::rclcpp
-)
-
-add_executable(perf_latency_pub_cpp validation/perf/rclcpp/perf_latency_pub_cpp.cpp)
-target_include_directories(perf_latency_pub_cpp PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
-target_link_libraries(perf_latency_pub_cpp
-  rclcpp::rclcpp
-  ${std_msgs_TARGETS}
-)
-
-add_executable(perf_latency_sub_cpp validation/perf/rclcpp/perf_latency_sub_cpp.cpp)
-target_include_directories(perf_latency_sub_cpp PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
-target_link_libraries(perf_latency_sub_cpp
-  rclcpp::rclcpp
-  ${std_msgs_TARGETS}
-)
-
-add_executable(perf_throughput_pub_cpp validation/perf/rclcpp/perf_throughput_pub_cpp.cpp)
-target_include_directories(perf_throughput_pub_cpp PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
-target_link_libraries(perf_throughput_pub_cpp
-  rclcpp::rclcpp
-  ${std_msgs_TARGETS}
-)
-
-add_executable(perf_throughput_sub_cpp validation/perf/rclcpp/perf_throughput_sub_cpp.cpp)
-target_include_directories(perf_throughput_sub_cpp PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
-target_link_libraries(perf_throughput_sub_cpp
-  rclcpp::rclcpp
-  ${std_msgs_TARGETS}
-)
-
-add_executable(perf_readiness_pub_cpp validation/perf/rclcpp/perf_readiness_pub_cpp.cpp)
-target_include_directories(perf_readiness_pub_cpp PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
-target_link_libraries(perf_readiness_pub_cpp
-  rclcpp::rclcpp
-  ${std_msgs_TARGETS}
-)
-
-add_executable(perf_readiness_sub_cpp validation/perf/rclcpp/perf_readiness_sub_cpp.cpp)
-target_include_directories(perf_readiness_sub_cpp PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
-target_link_libraries(perf_readiness_sub_cpp
-  rclcpp::rclcpp
-  ${std_msgs_TARGETS}
-)
 
 # ============================================================================
 # Installation
@@ -418,78 +256,6 @@ if(RMW_INT2DDS_BUILD_EVENT_VALIDATION)
   )
 endif()
 
-install(TARGETS qos_durability_sub_cpp
-  RUNTIME DESTINATION lib/${PROJECT_NAME}
-)
-
-install(TARGETS qos_durability_pub_cpp
-  RUNTIME DESTINATION lib/${PROJECT_NAME}
-)
-
-install(TARGETS qos_history_depth_sub_cpp
-  RUNTIME DESTINATION lib/${PROJECT_NAME}
-)
-
-install(TARGETS qos_history_depth_pub_cpp
-  RUNTIME DESTINATION lib/${PROJECT_NAME}
-)
-
-install(TARGETS qos_deadline_sub_cpp
-  RUNTIME DESTINATION lib/${PROJECT_NAME}
-)
-
-install(TARGETS qos_deadline_pub_cpp
-  RUNTIME DESTINATION lib/${PROJECT_NAME}
-)
-
-install(TARGETS qos_liveliness_sub_cpp
-  RUNTIME DESTINATION lib/${PROJECT_NAME}
-)
-
-install(TARGETS qos_liveliness_pub_cpp
-  RUNTIME DESTINATION lib/${PROJECT_NAME}
-)
-
-install(TARGETS qos_lifespan_sub_cpp
-  RUNTIME DESTINATION lib/${PROJECT_NAME}
-)
-
-install(TARGETS qos_lifespan_pub_cpp
-  RUNTIME DESTINATION lib/${PROJECT_NAME}
-)
-
-install(TARGETS content_filter_lifecycle_check_cpp
-  RUNTIME DESTINATION lib/${PROJECT_NAME}
-)
-
-install(TARGETS callback_executor_smoke_cpp
-  RUNTIME DESTINATION lib/${PROJECT_NAME}
-)
-
-install(TARGETS perf_latency_pub_cpp
-  RUNTIME DESTINATION lib/${PROJECT_NAME}
-)
-
-install(TARGETS perf_latency_sub_cpp
-  RUNTIME DESTINATION lib/${PROJECT_NAME}
-)
-
-install(TARGETS perf_throughput_pub_cpp
-  RUNTIME DESTINATION lib/${PROJECT_NAME}
-)
-
-install(TARGETS perf_throughput_sub_cpp
-  RUNTIME DESTINATION lib/${PROJECT_NAME}
-)
-
-install(TARGETS perf_readiness_pub_cpp
-  RUNTIME DESTINATION lib/${PROJECT_NAME}
-)
-
-install(TARGETS perf_readiness_sub_cpp
-  RUNTIME DESTINATION lib/${PROJECT_NAME}
-)
-
 # The int2dds FFI runtime library is installed by the int2dds_ffi_vendor
 # package. On Windows, copy the DLL next to the freshly built binaries so the
 # development/test executables can locate it at runtime.
@@ -516,7 +282,6 @@ if(BUILD_TESTING)
     "${CMAKE_CURRENT_SOURCE_DIR}/doc/*"
     "${CMAKE_CURRENT_SOURCE_DIR}/examples/*"
     "${CMAKE_CURRENT_SOURCE_DIR}/ros2_documentation_pr/*"
-    "${CMAKE_CURRENT_SOURCE_DIR}/validation/*"
   )
   list(APPEND RMW_INT2DDS_LINT_EXCLUDE_FILES
     "${CMAKE_CURRENT_SOURCE_DIR}/CHANGELOG.rst"
@@ -546,7 +311,7 @@ if(BUILD_TESTING)
   )
   ament_lint_auto_find_test_dependencies()
 
-  # ament_lint_auto forwards AMENT_LINT_AUTO_FILE_EXCLUDE to cpplint,
+  # Humble's ament_lint_auto forwards AMENT_LINT_AUTO_FILE_EXCLUDE to cpplint,
   # copyright and uncrustify, but not to flake8. Keep the package lint targets
   # explicit so generated/runtime validation assets do not fail release lint.
   ament_flake8(--exclude "${RMW_INT2DDS_LINT_EXCLUDE_FILES}")
@@ -569,11 +334,63 @@ if(BUILD_TESTING)
       -whitespace/line_length
   )
 
-  # Unit tests (uncomment when needed)
-  # find_package(ament_cmake_gtest REQUIRED)
-  # find_package(test_msgs REQUIRED)
-  # ament_add_gtest(test_rmw_init test/test_rmw_init.cpp)
-  # target_link_libraries(test_rmw_init rmw_int2dds_cpp)
+  # Wait set unit tests. rmw_create_wait_set and rmw_create_guard_condition
+  # only validate the context implementation identifier, so these run without a
+  # DDS participant: no discovery, no sockets, no traffic, and no flakiness
+  # from either.
+  find_package(ament_cmake_gtest REQUIRED)
+  ament_add_gtest(test_rmw_wait_guards test/test_rmw_wait_guards.cpp
+    TIMEOUT 120
+    ENV RMW_IMPLEMENTATION=rmw_int2dds_cpp ROS_DOMAIN_ID=71
+  )
+  if(TARGET test_rmw_wait_guards)
+    target_include_directories(test_rmw_wait_guards PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+    target_link_libraries(test_rmw_wait_guards
+      rmw_int2dds_cpp
+      int2dds_ffi::int2dds_ffi
+      ${PLATFORM_LIBS}
+    )
+    ament_target_dependencies(test_rmw_wait_guards rmw rcutils)
+    if(WIN32)
+      add_custom_command(TARGET test_rmw_wait_guards POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        $<TARGET_FILE:int2dds_ffi::int2dds_ffi> $<TARGET_FILE_DIR:test_rmw_wait_guards>
+        COMMENT "Copying int2dds_ffi.dll for test_rmw_wait_guards")
+    endif()
+  endif()
+
+  # The remaining checks under test/ are plain executables rather than gtest
+  # binaries: each drives the rmw C API (or the FFI directly) and reports through
+  # its exit status. Registering them is what gives `colcon test` something to
+  # run beyond the linters and test_rmw_wait_guards.
+  #
+  # GENERATE_RESULT_FOR_RETURN_CODE_ZERO: these write no JUnit XML of their own,
+  # so ament has to synthesise the passing result from the exit status.
+  #
+  # ROS_DOMAIN_ID does not actually separate them - nothing under src/ reads the
+  # variable, test_connection hardcodes domain 0 and the raw rmw_init path folds
+  # RMW_DEFAULT_DOMAIN_ID to 0 - so do not read it as isolation. It is set for
+  # the day those paths honour it. 71 belongs to test_rmw_wait_guards above and
+  # 81..84 to rmw_int2dds_validation.
+  find_package(ament_cmake_test REQUIRED)
+
+  function(rmw_int2dds_add_check name domain_id timeout)
+    # test_event_smoke is built only when the matched-event API is present.
+    if(NOT TARGET ${name})
+      message(WARNING "rmw_int2dds_cpp: ${name} not built; skipping test registration")
+      return()
+    endif()
+    ament_add_test(${name}
+      COMMAND "$<TARGET_FILE:${name}>"
+      TIMEOUT ${timeout}
+      GENERATE_RESULT_FOR_RETURN_CODE_ZERO
+      ENV RMW_IMPLEMENTATION=rmw_int2dds_cpp ROS_DOMAIN_ID=${domain_id}
+    )
+  endfunction()
+
+  rmw_int2dds_add_check(test_connection        72 60)
+  rmw_int2dds_add_check(test_event_validation  73 180)
+  rmw_int2dds_add_check(test_event_smoke       74 120)
 endif()
 
 # ============================================================================
@@ -593,7 +410,6 @@ ament_export_dependencies(
   rosidl_typesupport_c
   rosidl_typesupport_cpp
   rmw_dds_common
-  rclcpp
 )
 
 ament_package()
