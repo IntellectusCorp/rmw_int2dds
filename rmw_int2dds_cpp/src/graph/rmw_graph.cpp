@@ -685,7 +685,7 @@ extern "C" void rmw_int2dds_endpoint_discovery_cb(
   void * ctx, int32_t /*is_writer*/, int32_t is_alive,
   const Int2DdsPublicationBuiltinTopicData * pub_data,
   const Int2DdsSubscriptionBuiltinTopicData * sub_data,
-  const uint8_t (* guid)[16])
+  const uint8_t(*guid)[16])
 {
   auto * context_data = static_cast<rmw_int2dds_cpp::ContextData *>(ctx);
   if (context_data == nullptr) {
@@ -874,7 +874,7 @@ extern "C" void rmw_int2dds_endpoint_discovery_noop(
   void *, int32_t, int32_t,
   const Int2DdsPublicationBuiltinTopicData *,
   const Int2DdsSubscriptionBuiltinTopicData *,
-  const uint8_t (*)[16]) {}
+  const uint8_t(*)[16]) {}
 
 namespace rmw_int2dds_cpp
 {
