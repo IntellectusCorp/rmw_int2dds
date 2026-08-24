@@ -46,15 +46,17 @@ Environment variables
 int2DDS-specific configuration is provided through environment variables
 inherited from the int2DDS core:
 
-==============================  ==================================================
-Variable                        Description
-==============================  ==================================================
-``INT2DDS_NETWORK_INTERFACE``   Network interface to bind (e.g. ``eth0``)
-``INT2DDS_NETWORK_IP``          Bind to a specific IP address directly
-``INT2DDS_BROADCAST_ENABLED``   Enable broadcast discovery alongside multicast
-``RUST_LOG``                    Log level (``error``/``warn``/``info``/``debug``)
-``ROS_DOMAIN_ID``               ROS 2 domain id (standard ROS variable)
-==============================  ==================================================
+======================================  ==================================================
+Variable                                Description
+======================================  ==================================================
+``INT2DDS_NETWORK_INTERFACE``           Network interface to bind (e.g. ``eth0``)
+``INT2DDS_NETWORK_IP``                  Bind to a specific IP address directly
+``INT2DDS_BROADCAST_ENABLED``           Enable broadcast discovery alongside multicast
+``INT2DDS_USE_LOOPBACK_INTERFACE``      Use loopback interface for discovery/endpoints
+``INT2DDS_FORCE_LOOPBACK_MULTICAST``    Force multicast egress via loopback (local test)
+``RUST_LOG``                            Log level (``error``/``warn``/``info``/``debug``)
+``ROS_DOMAIN_ID``                       ROS 2 domain id (standard ROS variable)
+======================================  ==================================================
 
 .. note::
 
