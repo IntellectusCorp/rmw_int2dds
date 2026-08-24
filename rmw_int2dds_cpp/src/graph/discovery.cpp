@@ -108,6 +108,20 @@ void listener_loop(
     // block every participant queued behind it. Grow to the size the FFI reports and
     // take again instead.
     if (take == INT2DDS_RET_BUFFER_TOO_SMALL) {
+      // Only grow, and only within reason. Retrying without a bigger buffer would
+      // spin this thread at full speed - the very failure mode the growth is here
+      // to remove - and an implausible length must not turn into a huge
+      // allocation whose bad_alloc escapes the listener thread.
+      constexpr uintptr_t kMaxDiscoverySampleBytes = 16u * 1024u * 1024u;
+      if (actual_size <= buffer.size() || actual_size > kMaxDiscoverySampleBytes) {
+        RCUTILS_LOG_ERROR_NAMED(
+          "rmw_int2dds_cpp",
+          "discovery reader reported an unusable sample size %zu (buffer is %zu); "
+          "dropping this take",
+          static_cast<size_t>(actual_size), buffer.size());
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
+        continue;
+      }
       RCUTILS_LOG_WARN_NAMED(
         "rmw_int2dds_cpp",
         "discovery sample needs %zu bytes, buffer is %zu; growing",
