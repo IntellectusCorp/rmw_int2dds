@@ -339,7 +339,8 @@ void common_add_local_entity(
   const std::string & type_name,
   const rosidl_type_hash_t & type_hash,
   const rmw_qos_profile_t & qos,
-  bool is_reader)
+  bool is_reader,
+  const rosidl_type_hash_t * service_type_hash)
 {
   if (context_data == nullptr || !context_data->common) {
     return;
@@ -347,9 +348,18 @@ void common_add_local_entity(
   // type_hash is carried so get_*_info_by_topic reports the real topic type hash.
   // The entity is keyed by its DDS GUID so it correlates with the remote view
   // (ros_discovery_info associations + SEDP entity discovery).
+#if __has_include("rmw/get_service_endpoint_info.h")
+  // Lyrical's GraphCache additionally associates service endpoints by service
+  // type hash for rmw_get_clients/servers_info_by_service.
+  context_data->common->graph_cache.add_entity(
+    gid, dds_topic_name, type_name, type_hash,
+    context_data->common->gid, qos, is_reader, service_type_hash);
+#else
+  (void)service_type_hash;
   context_data->common->graph_cache.add_entity(
     gid, dds_topic_name, type_name, type_hash,
     context_data->common->gid, qos, is_reader);
+#endif
 }
 
 void common_remove_local_entity(
