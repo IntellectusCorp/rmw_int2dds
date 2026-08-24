@@ -50,6 +50,13 @@ waitset_registry_add(WaitSetData * ws_data)
   return true;
 }
 
+// Deliberately does not wait out cache_busy the way clean_caches does. The two
+// are asymmetric because their callers are: clean_caches runs from the destroy
+// path of some OTHER entity, which the rmw contract allows to happen while this
+// wait set is in rmw_wait, so it has to wait out the sections that hold no lock.
+// This one runs from rmw_destroy_wait_set, and rmw documents that function as
+// "Thread-Safe | No" - a concurrent rmw_wait on the same wait set is caller
+// error, so there is no legal cache_busy section to wait out.
 void
 waitset_registry_remove(WaitSetData * ws_data)
 {
@@ -58,6 +65,16 @@ waitset_registry_remove(WaitSetData * ws_data)
     std::remove(wait_sets().begin(), wait_sets().end(), ws_data), wait_sets().end());
 }
 
+// Not wrapped in try/catch, though it is reached from extern "C" rmw entry
+// points. The only things here that can throw are std::lock_guard and
+// condition_variable::wait raising std::system_error, i.e. the OS refusing a
+// mutex operation. Catching that would leave every wait set still holding
+// conditions this call was supposed to detach, which is worse than terminating.
+// It is also not what makes the C boundary exception-safe: nothing else in this
+// package has a barrier either, and its containers can throw std::bad_alloc from
+// far more places than this. The one catch in this file, in
+// waitset_registry_add, is a different thing - it turns a recoverable insert
+// failure into a return value so wait set creation aborts cleanly.
 void
 waitset_registry_clean_caches()
 {
