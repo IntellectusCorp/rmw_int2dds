@@ -374,6 +374,14 @@ refresh_event_status_condition(rmw_int2dds_cpp::EventData * event_data)
     return nullptr;
   }
 
+  // Unlike ensure_status_condition_mask above, this does not reset the mask to 0
+  // after creating the handle, and does not need to. A fresh int2DDS
+  // StatusCondition does come back with every status enabled (0x7FFF), which
+  // would make the early return below latch a wide-open mask - but the mask is a
+  // property of the DDS entity, not of the handle, and rmw_{publisher,
+  // subscription}_event_init narrows the entity before any event that reaches
+  // here can exist. test_event_validation's recreated-mask check pins that.
+
   uint32_t enabled_mask = 0;
   if (
     int2dds_statuscondition_get_enabled_statuses(status_condition, &enabled_mask) != INT2DDS_RET_OK)

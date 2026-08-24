@@ -539,6 +539,118 @@ test_init_and_callback_smoke()
   return true;
 }
 
+/// A status condition recreated after the reader handle is dropped must still be
+/// narrowed to the statuses the RMW actually wants.
+///
+/// int2dds_*_get_statuscondition hands out a brand-new StatusCondition with
+/// every status enabled - measured directly: 0x7FFF. The mask, though, belongs
+/// to the DDS entity and not to the handle, so once one of the creating paths
+/// has narrowed it, a later handle for the same entity sees the narrow mask.
+/// refresh_event_status_condition is the one creating path that does not reset
+/// the mask itself, and this is what pins the fact that it does not have to:
+/// rmw_subscription_event_init has always narrowed the entity first, so the
+/// early return ((enabled & wanted) == wanted) can never latch a wide-open mask.
+///
+/// Remove the reset from ensure_subscription_status_condition and this check
+/// fails with enabled_mask=0x7FFF - verified, so the guard is real rather than
+/// decorative.
+///
+/// The null-and-recreate below is exactly what
+/// destroy_subscription_reader_entities does to the handle.
+bool
+test_recreated_event_status_condition_mask()
+{
+  TestContext ctx;
+  if (!init_context(ctx, "recreated_mask_pub_node", "recreated_mask_sub_node")) {
+    return false;
+  }
+
+  const std::string topic_name = "/event_validation_recreated_mask";
+  const rmw_qos_profile_t default_qos = rmw_qos_profile_default;
+  if (!create_subscription(ctx, topic_name, default_qos)) {
+    cleanup_context(ctx);
+    return false;
+  }
+
+  rmw_event_t event = rmw_get_zero_initialized_event();
+  if (!check_ret(
+      rmw_subscription_event_init(&event, ctx.subscription, RMW_EVENT_MESSAGE_LOST),
+      "rmw_subscription_event_init(recreated_mask)"))
+  {
+    cleanup_context(ctx);
+    return false;
+  }
+
+  auto * sub_data = static_cast<rmw_int2dds_cpp::SubscriptionData *>(ctx.subscription->data);
+  if (sub_data == nullptr || sub_data->status_condition == nullptr) {
+    std::cerr << "[ERROR] recreated_mask: event has no status condition to begin with"
+              << std::endl;
+    ignore_ret(rmw_event_fini(&event));
+    cleanup_context(ctx);
+    return false;
+  }
+
+  // Drop the handle the way a content-filter update does.
+  int2dds_statuscondition_delete(sub_data->status_condition);
+  sub_data->status_condition = nullptr;
+
+  // One wait with a real timeout: a zero timeout short-circuits before the
+  // attach pass, and it is the attach pass that recreates the handle.
+  void * event_entries[1] = {&event};
+  rmw_events_t events{1, event_entries};
+  rmw_time_t timeout{0, 100u * 1000u * 1000u};
+  const rmw_ret_t wait_ret =
+    rmw_wait(nullptr, nullptr, nullptr, nullptr, &events, ctx.wait_set, &timeout);
+  if (wait_ret != RMW_RET_OK && wait_ret != RMW_RET_TIMEOUT) {
+    std::cerr << "[ERROR] recreated_mask: rmw_wait returned " << wait_ret << std::endl;
+    ignore_ret(rmw_event_fini(&event));
+    cleanup_context(ctx);
+    return false;
+  }
+
+  if (sub_data->status_condition == nullptr) {
+    std::cerr << "[ERROR] recreated_mask: the status condition was not recreated" << std::endl;
+    ignore_ret(rmw_event_fini(&event));
+    cleanup_context(ctx);
+    return false;
+  }
+
+  uint32_t enabled_mask = 0;
+  const Int2DdsRet ret = int2dds_statuscondition_get_enabled_statuses(
+    sub_data->status_condition, &enabled_mask);
+  if (ret != INT2DDS_RET_OK) {
+    std::cerr << "[ERROR] recreated_mask: failed to query the mask ret=" << ret << std::endl;
+    ignore_ret(rmw_event_fini(&event));
+    cleanup_context(ctx);
+    return false;
+  }
+
+  // Only the event's own status was asked for; the subscription itself was not
+  // part of the wait, so DATA_AVAILABLE is not expected either.
+  const uint32_t expected = static_cast<uint32_t>(INT2DDS_STATUS_SAMPLE_LOST);
+  if ((enabled_mask & ~expected) != 0) {
+    std::cerr << "[ERROR] recreated_mask: the recreated status condition is wider than asked for"
+              << " enabled_mask=0x" << std::hex << enabled_mask
+              << " expected=0x" << expected << std::dec << std::endl;
+    ignore_ret(rmw_event_fini(&event));
+    cleanup_context(ctx);
+    return false;
+  }
+  if ((enabled_mask & expected) != expected) {
+    std::cerr << "[ERROR] recreated_mask: the recreated status condition lost SAMPLE_LOST"
+              << " enabled_mask=0x" << std::hex << enabled_mask << std::dec << std::endl;
+    ignore_ret(rmw_event_fini(&event));
+    cleanup_context(ctx);
+    return false;
+  }
+
+  ignore_ret(rmw_event_fini(&event));
+  cleanup_context(ctx);
+  std::cout << "[OK] recreated event status condition mask validation passed"
+            << " enabled_mask=0x" << std::hex << enabled_mask << std::dec << std::endl;
+  return true;
+}
+
 bool
 test_message_lost_take_no_event()
 {
@@ -1007,6 +1119,7 @@ main()
     test_support_matrix() &&
     test_init_and_callback_smoke() &&
     test_message_lost_status_condition_mask() &&
+    test_recreated_event_status_condition_mask() &&
     test_message_lost_take_no_event() &&
     test_subscription_matched_runtime() &&
     test_publication_matched_runtime() &&
