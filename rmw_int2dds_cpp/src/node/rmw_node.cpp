@@ -29,6 +29,7 @@
 #include "rmw/validate_node_name.h"
 
 #include "../graph/discovery.hpp"
+#include "../wait/waitset_registry.hpp"  // NOLINT(build/include)
 #include "rcutils/allocator.h"
 #include "rcutils/strdup.h"
 
@@ -430,11 +431,28 @@ rmw_destroy_node(rmw_node_t * node)
   // lyrical rclpy defers publisher teardown (Node.destroy_node ->
   // handle.destroy_when_not_in_use), so rmw_destroy_publisher may not run before
   // the node/participant is gone, orphaning each cycle's DataWriter cache. The
-  // datawriter is nulled so a later rmw_destroy_publisher skips it.
+  // datawriter and its status condition are nulled so a later
+  // rmw_destroy_publisher skips both.
+  //
+  // Order and locking follow rmw_destroy_publisher exactly. clean_caches has to
+  // run first because a wait set keys its attachments on the status condition
+  // handle (WaitSetData::attached_conditions), so the handles cannot die while
+  // an attachment still names them. It runs outside entities_mutex because it
+  // takes the registry lock and then each wait set's lock; no path in this
+  // package takes those while holding entities_mutex, and this one must not
+  // become the first.
+  rmw_int2dds_cpp::waitset_registry_clean_caches();
   {
     std::lock_guard<std::mutex> lock(node_data->entities_mutex);
     for (auto * pd : node_data->live_publishers) {
-      if (pd != nullptr && pd->datawriter != nullptr) {
+      if (pd == nullptr) {
+        continue;
+      }
+      if (pd->status_condition != nullptr) {
+        int2dds_statuscondition_delete(pd->status_condition);
+        pd->status_condition = nullptr;
+      }
+      if (pd->datawriter != nullptr) {
         int2dds_delete_datawriter(pd->datawriter);
         pd->datawriter = nullptr;
       }
