@@ -39,21 +39,17 @@
   <depend>rosidl_typesupport_c</depend>
   <depend>rosidl_typesupport_cpp</depend>
 
-  <!-- Optional on Humble, always present from Iron on. CMakeLists.txt find_package()es
-       it QUIET, so leaving it undeclared makes the dynamic message type support
-       vanish from a build-farm .deb with no error at all. -->
+  <!-- Backs rmw_take_dynamic_message and the serialization support vtable.
+       Present from Iron on, so it is a plain depend: probing it QUIET and leaving
+       it undeclared is how a build-farm .deb ends up without dynamic message
+       support and no error to show for it. -->
   <depend>rosidl_dynamic_typesupport</depend>
 
-  <!-- Used by the in-repo validation/probe executables and the checks under test/.
-       CMakeLists.txt find_package()es every one of these; declaring them is what
-       keeps a build-farm job from either failing to configure or quietly dropping
-       the targets that need them. -->
+  <!-- Message type used by the event smoke/validation executables under test/.
+       The rclcpp-based probes and the dynamic message checks moved to
+       rmw_int2dds_validation, which is why rclcpp, rcl, geometry_msgs,
+       diagnostic_msgs and rclpy are no longer declared here. -->
   <depend>std_msgs</depend>
-  <depend>rclcpp</depend>
-  <depend>rcl</depend>
-  <depend>geometry_msgs</depend>
-  <depend>diagnostic_msgs</depend>
-  <exec_depend>rclpy</exec_depend>
 
   <!-- Prebuilt int2DDS FFI library (downloaded + exported by the vendor pkg).
        No version range: int2dds_ffi_vendor is released from this repository, and
