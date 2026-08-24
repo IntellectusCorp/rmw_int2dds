@@ -32,6 +32,7 @@
 #include "rmw/error_handling.h"
 
 #include "rmw_int2dds_cpp/identifier.hpp"
+#include "rmw_int2dds_cpp/types.hpp"
 
 namespace
 {
@@ -317,6 +318,50 @@ TEST_F(GuardFixture, ZeroEntitiesTimesOut)
 {
   const rmw_time_t poll = make_timeout(0, 0);
   EXPECT_EQ(RMW_RET_TIMEOUT, wait(&poll));
+}
+
+/// A partially failed attach must not leave the wait set attached to entities
+/// the caller has since dropped.
+///
+/// stamp_desired_attachments empties every cached_* list when any attach fails,
+/// so the next call sees empty caches. require_reattach(empty, 0, nullptr) is
+/// false, so a following call that passes no entities at all skips both the
+/// rebuild and detach_stale_attachments - and whatever did attach during the
+/// failed pass stays attached for good. A guard triggered afterwards then wakes
+/// a wait that was told to watch nothing.
+TEST_F(GuardFixture, StaleAttachmentDroppedAfterFailedAttach)
+{
+  rmw_guard_condition_t * gc = add_guard();
+
+  // Force the failure path. A subscription whose datareader is null cannot
+  // attach, so stamp_desired_attachments ends with all_attached false - while
+  // the guard beside it attaches normally.
+  rmw_int2dds_cpp::SubscriptionData sub_data{};
+  void * sub_handle = &sub_data;
+  rmw_subscriptions_t subs{};
+  subs.subscribers = &sub_handle;
+  subs.subscriber_count = 1;
+
+  rebuild_handles();
+  const rmw_time_t hundred_ms = make_timeout(0, 100u * 1000u * 1000u);
+  // The return code is not the subject here; the attachment bookkeeping is.
+  (void)rmw_wait(&subs, &gc_array_, nullptr, nullptr, nullptr, wait_set_, &hundred_ms);
+
+  ASSERT_EQ(RMW_RET_OK, rmw_trigger_guard_condition(gc));
+
+  // Ask the wait set to watch nothing. The guard is triggered, but the caller
+  // no longer names it, so this has to run the full timeout.
+  const rmw_time_t three_hundred_ms = make_timeout(0, 300u * 1000u * 1000u);
+  const auto t0 = std::chrono::steady_clock::now();
+  const rmw_ret_t ret =
+    rmw_wait(nullptr, nullptr, nullptr, nullptr, nullptr, wait_set_, &three_hundred_ms);
+  const auto elapsed_ms =
+    std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - t0)
+    .count();
+
+  EXPECT_EQ(RMW_RET_TIMEOUT, ret);
+  EXPECT_GE(elapsed_ms, 250)
+    << "a guard the caller dropped still woke the wait set: the attachment leaked";
 }
 
 TEST_F(GuardFixture, NullWaitSetIsRejected)

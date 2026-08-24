@@ -286,6 +286,10 @@ struct WaitSetData
   // Attached conditions, each stamped with the attach_generation that last
   // wanted it. A rebuild detaches whatever keeps an older stamp.
   uint64_t attach_generation{0};
+  // Set when an attach failed, so the next rmw_wait rebuilds even if the entity
+  // set is unchanged - including when it is empty, which no comparison against
+  // the cached lists can express.
+  bool force_rebuild{false};
   std::unordered_map<Int2DdsStatusCondition *, uint64_t> attached_conditions;
   std::unordered_map<Int2DdsGuardCondition *, uint64_t> attached_guards;
 };
