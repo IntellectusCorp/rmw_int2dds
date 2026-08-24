@@ -17,12 +17,14 @@
 #include <chrono>
 #include <cstring>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <thread>
 #include <tuple>
 #include <vector>
 
 #include "rcutils/allocator.h"
+#include "rcutils/logging_macros.h"
 
 #include "rmw/allocators.h"
 #include "rmw/error_handling.h"
@@ -100,6 +102,20 @@ void listener_loop(
     bool valid = false;
     const Int2DdsRet take = int2dds_datareader_take_serialized(
       context_data->discovery_reader, buffer.data(), buffer.size(), &actual_size, &valid);
+
+    // A sample larger than our buffer stays in the reader cache, and this reader is
+    // KEEP_ALL: retrying at the same size would spin on that one sample forever and
+    // block every participant queued behind it. Grow to the size the FFI reports and
+    // take again instead.
+    if (take == INT2DDS_RET_BUFFER_TOO_SMALL) {
+      RCUTILS_LOG_WARN_NAMED(
+        "rmw_int2dds_cpp",
+        "discovery sample needs %zu bytes, buffer is %zu; growing",
+        static_cast<size_t>(actual_size), buffer.size());
+      buffer.resize(actual_size);
+      continue;
+    }
+
     if (take != INT2DDS_RET_OK || !valid || actual_size == 0) {
       std::this_thread::sleep_for(std::chrono::milliseconds(20));
       continue;
@@ -257,6 +273,9 @@ rmw_ret_t init_discovery(ContextData * context_data, const char * enclave)
   context_data->common->listener_thread =
     std::thread(listener_loop, context_data, type_support);
 
+  // Consume core SEDP endpoint discovery incrementally (and bootstrap current state).
+  enable_endpoint_push(context_data);
+
   return RMW_RET_OK;
 }
 
@@ -265,6 +284,8 @@ void fini_discovery(ContextData * context_data)
   if (context_data == nullptr) {
     return;
   }
+  // Stop new callbacks from touching context_data before we tear it down.
+  disable_endpoint_push(context_data);
   // Stop and join the listener thread before destroying the reader it polls.
   if (context_data->common) {
     context_data->common->graph_cache.set_on_change_callback(nullptr);
@@ -289,7 +310,12 @@ void fini_discovery(ContextData * context_data)
     rmw_publisher_free(context_data->common->pub);
     context_data->common->pub = nullptr;
   }
-  context_data->common.reset();
+  // Hold remote_sync_mutex: an endpoint-discovery callback still in flight reads
+  // context_data->common, and resetting it out from under one would crash.
+  {
+    std::lock_guard<std::mutex> lock(context_data->remote_sync_mutex);
+    context_data->common.reset();
+  }
 }
 
 void common_add_local_entity(

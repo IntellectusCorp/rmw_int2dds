@@ -34,6 +34,11 @@ rmw_ret_t init_discovery(ContextData * context_data, const char * enclave);
 // Tear down discovery: join the listener thread and release the Context.
 void fini_discovery(ContextData * context_data);
 
+// Register / unregister the SEDP endpoint-discovery push consumer on the core
+// participant. enable also seeds already-discovered endpoints (bootstrap).
+void enable_endpoint_push(ContextData * context_data);
+void disable_endpoint_push(ContextData * context_data);
+
 // Register / withdraw a locally-created endpoint in the standard rmw_dds_common
 // GraphCache entity layer (topic name + type), keyed by its DDS endpoint GUID
 // (`gid`). The node-association layer is handled separately by the caller via
