@@ -41,6 +41,7 @@
 #include "int2dds-ffi.h"  // NOLINT(build/include_subdir): vendored FFI header
 #include "rmw_int2dds_cpp/identifier.hpp"
 #include "rmw_int2dds_cpp/types.hpp"
+#include "../wait/waitset_registry.hpp"  // NOLINT(build/include)
 #include "../common/listeners.hpp"  // NOLINT(build/include_subdir)
 #include "../graph/graph_guard.hpp"
 #include "../graph/discovery.hpp"
@@ -695,6 +696,7 @@ rmw_destroy_publisher(rmw_node_t * node, rmw_publisher_t * publisher)
   }
 
   // Delete DDS entities
+  rmw_int2dds_cpp::waitset_registry_clean_caches();
   if (pub_data->status_condition != nullptr) {
     int2dds_statuscondition_delete(pub_data->status_condition);
     pub_data->status_condition = nullptr;

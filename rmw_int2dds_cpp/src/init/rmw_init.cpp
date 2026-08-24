@@ -33,6 +33,7 @@
 #include "rmw_int2dds_cpp/identifier.hpp"
 #include "rmw_int2dds_cpp/types.hpp"
 #include "../graph/discovery.hpp"
+#include "../wait/waitset_registry.hpp"
 
 namespace rmw_int2dds_cpp
 {
@@ -48,6 +49,9 @@ release_context_resources(ContextData * context_data)
     fini_discovery(context_data);
   }
   if (context_data->graph_guard_condition != nullptr) {
+    // Defensive: make sure no wait set still references this guard before freeing
+    // it, covering out-of-contract teardown where the context outlives a wait set.
+    waitset_registry_clean_caches();
     int2dds_guardcondition_delete(context_data->graph_guard_condition);
     context_data->graph_guard_condition = nullptr;
   }
