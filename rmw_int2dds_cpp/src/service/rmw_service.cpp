@@ -613,17 +613,25 @@ rmw_service_server_is_available(
   const rmw_client_t * client,
   bool * is_available)
 {
+// The conformance suite's expectation for null arguments here changed across
+// distros: Jazzy expects RMW_RET_ERROR, Lyrical expects RMW_RET_INVALID_ARGUMENT
+// (detected via a header introduced in the same release).
+#if __has_include("rmw/get_service_endpoint_info.h")
+  constexpr rmw_ret_t null_argument_ret = RMW_RET_INVALID_ARGUMENT;
+#else
+  constexpr rmw_ret_t null_argument_ret = RMW_RET_ERROR;
+#endif
   if (node == nullptr) {
     RMW_SET_ERROR_MSG("node argument is null");
-    return RMW_RET_ERROR;
+    return null_argument_ret;
   }
   if (client == nullptr) {
     RMW_SET_ERROR_MSG("client argument is null");
-    return RMW_RET_ERROR;
+    return null_argument_ret;
   }
   if (is_available == nullptr) {
     RMW_SET_ERROR_MSG("is_available argument is null");
-    return RMW_RET_ERROR;
+    return null_argument_ret;
   }
 
   if (node->implementation_identifier != rmw_int2dds_cpp::implementation_identifier) {
