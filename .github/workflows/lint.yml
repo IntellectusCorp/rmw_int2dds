@@ -6,17 +6,22 @@
 # ament_uncrustify, ament_cppcheck) are NOT run here. action-ros-lint does not
 # support them, and they are build-coupled, so they run inside `colcon test`
 # (via ament_lint_common) in build.yml instead. Do not duplicate them here.
+#
+# Pinned to this branch's distro (lyrical), like build.yml and package-deb.yml.
+# ros-lyrical-ament-xmllint is published for Ubuntu 26.04 (resolute) only, so
+# this job runs on ubuntu-26.04 where the other branches use ubuntu-24.04.
 name: lint
 
 on:
   push:
-    branches: [main]
+    branches: [lyrical]
   pull_request:
+    branches: [lyrical]
   workflow_dispatch:
 
 jobs:
   ament_lint:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     strategy:
       fail-fast: false
       matrix:
@@ -30,5 +35,7 @@ jobs:
       - uses: ros-tooling/action-ros-lint@v0.1
         with:
           linter: ${{ matrix.linter }}
-          distribution: jazzy
-          package-name: rmw_int2dds_cpp
+          distribution: lyrical
+          # Every package in this repository. action-ros-lint takes a
+          # whitespace-separated list, same as build.yml.
+          package-name: int2dds_ffi_vendor rmw_int2dds_cpp rmw_int2dds_validation

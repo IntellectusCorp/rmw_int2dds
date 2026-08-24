@@ -1,0 +1,77 @@
+# Build per-architecture .deb packages for the int2DDS RMW stack (this branch = lyrical).
+# Each version branch (humble/jazzy/lyrical/rolling) carries its own copy of this workflow
+# with ROS_DISTRO set to that branch's distro. amd64 and arm64 are built and verified
+# (official ros:<distro>-ros-base images ship for those two architectures).
+#
+# Each arch runs on its NATIVE GitHub-hosted runner (amd64 -> ubuntu-26.04,
+# arm64 -> ubuntu-26.04-arm). This avoids QEMU user-mode emulation, under which
+# libc-bin's ldconfig trigger segfaults during `apt-get install` of the debs.
+name: package-deb
+
+on:
+  pull_request:
+    branches: [lyrical]
+    paths:
+      - 'packaging/**'
+      - '.github/workflows/package-deb.yml'
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+env:
+  ROS_DISTRO: lyrical
+
+jobs:
+  build:
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-26.04
+          - arch: arm64
+            runner: ubuntu-26.04-arm
+    steps:
+      - name: Checkout rmw repo
+        uses: actions/checkout@v4
+        with:
+          path: rmw_int2dds
+
+      # int2dds_ffi_vendor is a package inside this repository, so the checkout
+      # above already provides it. The vendor package downloads the prebuilt FFI
+      # tarball from the int2dds_ffi_vendor release page during its CMake configure.
+
+      # No QEMU setup: each arch builds/verifies its own native platform on a
+      # matching runner, so docker --platform runs natively (no emulation).
+      # No INT2DDS_FFI_TOKEN: the vendor package fetches the release asset with an
+      # unauthenticated CMake file(DOWNLOAD). The secret was only needed for the
+      # private sibling checkout that this repository no longer performs.
+      - name: Build debs
+        working-directory: rmw_int2dds
+        run: bash ./packaging/build-deb.sh "${ROS_DISTRO}" "${{ matrix.arch }}"
+
+      - name: Verify debs
+        working-directory: rmw_int2dds
+        run: bash ./packaging/verify-deb.sh "${ROS_DISTRO}" "${{ matrix.arch }}"
+
+      - name: Upload deb artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: deb-${{ env.ROS_DISTRO }}-${{ matrix.arch }}
+          path: rmw_int2dds/dist/${{ env.ROS_DISTRO }}/${{ matrix.arch }}/*.deb
+          if-no-files-found: warn
+
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-26.04
+    steps:
+      - name: Download all debs
+        uses: actions/download-artifact@v4
+        with:
+          path: debs
+      - name: Attach debs to the release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: debs/**/*.deb

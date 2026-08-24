@@ -1,0 +1,60 @@
+# Build + test the int2DDS RMW stack (this branch = lyrical). Each version branch
+# (humble/jazzy/lyrical/rolling) carries its own copy of this workflow pinned to
+# that branch's distro, the same convention package-deb.yml and lint.yml follow:
+# the branches carry distro-specific sources, so building one branch against
+# another distro would either fail or give false confidence.
+#
+# rmw_int2dds_cpp links against the int2DDS FFI library (libint2dds_ffi.so +
+# int2dds-ffi.h). That library is not committed here: the int2dds_ffi_vendor
+# package in this repository downloads the prebuilt tarball from
+# https://github.com/IntellectusCorp/int2dds_ffi_vendor/releases at CMake
+# configure time and verifies it against the sha256 in the bundled manifest.
+# Building int2dds_ffi_vendor before rmw_int2dds_cpp is therefore all CI needs,
+# and it requires outbound network access to github.com.
+name: build
+
+on:
+  push:
+    branches: [lyrical]
+  pull_request:
+    branches: [lyrical]
+  workflow_dispatch:
+
+jobs:
+  build-test:
+    # Lyrical Luth targets Ubuntu 26.04 (resolute), so the runner matches the
+    # container's OS. Everything distro-specific still happens inside the
+    # container below.
+    runs-on: ubuntu-26.04
+    # This image carries the Lyrical rmw headers (rmw 7.10.x), which include
+    # rmw/events_statuses/matched.h and rmw/get_service_endpoint_info.h, so
+    # rmw_int2dds_cpp/CMakeLists.txt finds them and builds the matched-event
+    # smoke target. The decision comes from probing the headers, not from
+    # $ENV{ROS_DISTRO}, so it holds wherever this package is built rather than
+    # only where ros_environment happens to be installed.
+    container:
+      image: ros:lyrical-ros-base
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build and test
+        uses: ros-tooling/action-ros-ci@master
+        with:
+          package-name: int2dds_ffi_vendor rmw_int2dds_cpp rmw_int2dds_validation
+          target-ros2-distro: lyrical
+          # The action runs `colcon lcov-result` / `colcon coveragepy-result`
+          # after the build, but colcon-lcov-result and colcon-coveragepy-result
+          # are not part of the ros:lyrical-ros-base image, so those verbs abort
+          # the step with exit 2 even when the build and every test pass. No
+          # coverage target is tracked for this package (see
+          # QUALITY_DECLARATION.md), so skip the coverage stage entirely rather
+          # than install two extensions whose output nothing consumes.
+          coverage-result: false
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-lyrical
+          path: ros_ws/build/rmw_int2dds_cpp/test_results/
+          if-no-files-found: ignore
