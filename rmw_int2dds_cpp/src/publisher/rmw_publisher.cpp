@@ -622,6 +622,7 @@ rmw_create_publisher(
   {
     std::lock_guard<std::mutex> lock(node_data->entities_mutex);
     node_data->publishers.push_back(pub_data->gid);
+    node_data->live_publishers.push_back(pub_data);
   }
 
   // Listener starts with an empty mask; refreshed when user callbacks register
@@ -683,6 +684,13 @@ rmw_destroy_publisher(rmw_node_t * node, rmw_publisher_t * publisher)
     for (auto it = pubs.begin(); it != pubs.end(); ++it) {
       if (std::memcmp(it->data, pub_data->gid.data, RMW_GID_STORAGE_SIZE) == 0) {
         pubs.erase(it);
+        break;
+      }
+    }
+    auto & lpubs = node_data->live_publishers;
+    for (auto it = lpubs.begin(); it != lpubs.end(); ++it) {
+      if (*it == pub_data) {
+        lpubs.erase(it);
         break;
       }
     }
