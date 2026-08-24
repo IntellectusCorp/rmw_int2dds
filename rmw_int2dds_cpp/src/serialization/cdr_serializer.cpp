@@ -990,6 +990,11 @@ bool CdrDeserializer::deserialize_member_c(
         align(element_size);
         return deserialize_raw(first_element, array_size * element_size);
       }
+      // Same reasoning as serialize_member_c: the per-element loop below writes
+      // through the accessor result directly (the C path has no assign fallback,
+      // unlike deserialize_member_cpp), so a null first element would be a null
+      // write. Fail cleanly instead.
+      return false;
     }
 
     for (size_t i = 0; i < array_size; ++i) {
