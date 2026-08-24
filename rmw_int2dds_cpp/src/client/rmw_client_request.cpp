@@ -28,6 +28,7 @@
 
 #include "int2dds-ffi.h"  // NOLINT(build/include_subdir): vendored FFI header
 #include "rmw_int2dds_cpp/identifier.hpp"
+#include <mutex>
 #include "rmw_int2dds_cpp/types.hpp"
 #include "rmw_int2dds_cpp/cdr_serializer.hpp"
 #include "../common/take_with_info.hpp"  // NOLINT(build/include_subdir)
@@ -188,12 +189,10 @@ rmw_send_request(
   }
 
   // Send request
-  Int2DdsRet ret = int2dds_write_serialized(
+  Int2DdsRet ret = int2dds_datawriter_write_serialized(
     cli_data->request_writer,
     send_buffer.data(),
-    send_buffer.size(),
-    nullptr,
-    0);
+    send_buffer.size());
 
   if (ret != INT2DDS_RET_OK) {
     RMW_SET_ERROR_MSG("failed to send request");
@@ -234,6 +233,7 @@ rmw_take_response(
   size_t payload_size = 0;
   Int2DdsSampleInfo sample_info;
 
+  std::lock_guard<std::mutex> take_lk(cli_data->response_take_mutex);
   while (true) {
     size_t data_size = 0;
     bool valid_data = false;

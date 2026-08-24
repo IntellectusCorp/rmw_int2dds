@@ -56,9 +56,10 @@ def main() -> int:
             node.get_logger().info('future done callback ok')
         else:
             node.get_logger().error(
-                f'future done callback failed: called={
-                    node.done_callback_called}, result={
-                    node.result_value}')
+                f'future done callback failed: '
+                f'called={node.done_callback_called}, '
+                f'result={node.result_value}'
+            )
     finally:
         node.destroy_node()
         rclpy.shutdown()

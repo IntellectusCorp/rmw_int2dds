@@ -1,12 +1,7 @@
 # Local rosdep definitions for the int2DDS RMW packages (not in public rosdistro).
-# @ROS_DISTRO@ is substituted with the target distro (jazzy/humble) at build time
+# @ROS_DISTRO@ is substituted with the target distro (humble/jazzy/lyrical/rolling) at build time
 # by packaging/in-container-build.sh.
 int2dds_ffi_vendor:
   ubuntu: [ros-@ROS_DISTRO@-int2dds-ffi-vendor]
 rmw_int2dds_cpp:
   ubuntu: [ros-@ROS_DISTRO@-rmw-int2dds-cpp]
-# test_rmw_implementation is a released ROS package but is absent from the minimal
-# container's rosdep view; map it so bloom-generate can resolve the test_depend.
-# (It is skipped at rosdep-install time — binary deb builds do not run tests.)
-test_rmw_implementation:
-  ubuntu: [ros-@ROS_DISTRO@-test-rmw-implementation]

@@ -19,6 +19,7 @@
 #include "int2dds-ffi.h"  // NOLINT(build/include_subdir): vendored FFI header
 #include "rmw_int2dds_cpp/identifier.hpp"
 #include "rmw_int2dds_cpp/types.hpp"
+#include "../wait/waitset_registry.hpp"  // NOLINT(build/include)
 
 extern "C"
 {
@@ -40,7 +41,7 @@ rmw_create_guard_condition(rmw_context_t * context)
   }
 
   // Create DDS guard condition
-  Int2DdsRet ret = int2dds_guard_condition_new(&gc_data->guard_condition);
+  Int2DdsRet ret = int2dds_guardcondition_new(&gc_data->guard_condition);
   if (ret != INT2DDS_RET_OK) {
     delete gc_data;
     RMW_SET_ERROR_MSG("failed to create DDS guard condition");
@@ -50,7 +51,7 @@ rmw_create_guard_condition(rmw_context_t * context)
   // Allocate RMW guard condition
   rmw_guard_condition_t * guard_condition = rmw_guard_condition_allocate();
   if (guard_condition == nullptr) {
-    int2dds_guard_condition_delete(gc_data->guard_condition);
+    int2dds_guardcondition_delete(gc_data->guard_condition);
     delete gc_data;
     RMW_SET_ERROR_MSG("failed to allocate guard condition");
     return nullptr;
@@ -75,8 +76,11 @@ rmw_destroy_guard_condition(rmw_guard_condition_t * guard_condition)
 
   auto * gc_data = static_cast<rmw_int2dds_cpp::GuardConditionData *>(guard_condition->data);
   if (gc_data != nullptr) {
+    // Clean regardless of handle ownership: gc_data itself is what wait set
+    // caches key on, and it is freed below either way.
+    rmw_int2dds_cpp::waitset_registry_clean_caches();
     if (gc_data->owns_guard_condition && gc_data->guard_condition != nullptr) {
-      int2dds_guard_condition_delete(gc_data->guard_condition);
+      int2dds_guardcondition_delete(gc_data->guard_condition);
     }
     delete gc_data;
   }
@@ -101,7 +105,7 @@ rmw_trigger_guard_condition(const rmw_guard_condition_t * guard_condition)
     return RMW_RET_ERROR;
   }
 
-  Int2DdsRet ret = int2dds_guard_condition_set_trigger_value(gc_data->guard_condition, true);
+  Int2DdsRet ret = int2dds_guardcondition_set_trigger_value(gc_data->guard_condition, true);
   if (ret != INT2DDS_RET_OK) {
     RMW_SET_ERROR_MSG("failed to trigger guard condition");
     return RMW_RET_ERROR;

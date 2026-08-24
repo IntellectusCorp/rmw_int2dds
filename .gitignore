@@ -36,6 +36,7 @@ Makefile
 
 .claude/
 .serena/
+
 # deb packaging build artifacts (packaging/build-deb.sh output)
 /dist/
 # bloom-generated packaging (created in a container scratch copy; never committed)

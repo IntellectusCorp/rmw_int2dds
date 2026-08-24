@@ -42,6 +42,7 @@
 #include "int2dds-ffi.h"  // NOLINT(build/include_subdir): vendored FFI header
 #include "rmw_int2dds_cpp/identifier.hpp"
 #include "rmw_int2dds_cpp/types.hpp"
+#include "../wait/waitset_registry.hpp"  // NOLINT(build/include)
 #include "../common/listeners.hpp"  // NOLINT(build/include_subdir)
 #include "../common/type_hash_qos.hpp"
 #include "../graph/graph_guard.hpp"
@@ -102,11 +103,22 @@ int32_t
 liveliness_to_int2dds(rmw_qos_liveliness_policy_t liveliness)
 {
   switch (liveliness) {
+// The deprecated MANUAL_BY_NODE liveliness policy is gone from Lyrical's rmw.
+// Enumerators are invisible to __has_include, so probe a header instead:
+// rmw/get_service_endpoint_info.h, added in rmw 7.9.1 (ros2/rmw#371). That is
+// NOT the same release the enumerator went in - it is still present at 7.8.2
+// and gone by 7.10.1 - but no released distro ships an rmw in between, so the
+// probe is exact everywhere this package builds:
+//   jazzy 7.3.3, kilted 7.8.2  -> header absent,  enumerator present
+//   lyrical 7.10.1             -> header present, enumerator absent
+// Revisit if this ever has to build against rmw 7.9.x.
+#if !__has_include("rmw/get_service_endpoint_info.h")
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
     case RMW_QOS_POLICY_LIVELINESS_MANUAL_BY_NODE:
 #pragma GCC diagnostic pop
       return INT2DDS_QOS_LIVELINESS_MANUAL_BY_PARTICIPANT;
+#endif
     case RMW_QOS_POLICY_LIVELINESS_MANUAL_BY_TOPIC:
       return INT2DDS_QOS_LIVELINESS_MANUAL_BY_TOPIC;
     case RMW_QOS_POLICY_LIVELINESS_AUTOMATIC:
@@ -193,18 +205,60 @@ append_field_descriptor(
     return false;
   }
 
-  // Use the same ROS->int2dds field-type mapping that the topic type builder
-  // uses (INT2DDS_FIELD_*). The previous ad-hoc 0-9 table did not match the
-  // values int2dds_create_topic_with_field_descriptors expects and omitted
-  // float types entirely, so content filters on float/string fields (and in
-  // fact every field) were registered with the wrong type id.
-  const int32_t field_type = ros_type_to_int2dds_field(ros_type);
-  if (field_type < 0) {
-    return false;
+  // int2dds_create_topic_with_field_descriptors takes its own scalar-only field
+  // codes, NOT the INT2DDS_FIELD_* constants used everywhere else. The core says
+  // so itself in ffi/src/topic.rs (field_descriptor_type): "a distinct encoding
+  // from the INT2DDS_FIELD_* constants", mapping 0..9 to String, Int32, UInt32,
+  // Int16, UInt16, Int64, UInt64, Int8, UInt8, Bool and rejecting everything
+  // else. Feeding it INT2DDS_FIELD_* registers every field under the wrong type
+  // and content filtering silently stops matching, so keep this table in step
+  // with that function rather than with ros_type_to_int2dds_field().
+  //
+  // Types outside the table (float, double, char, wchar, nested, sequences) have
+  // no code, so return false and let the caller fall back to an unfiltered
+  // subscription instead of registering a wrong one.
+  uint32_t field_type = 0;
+  switch (ros_type) {
+    case rosidl_typesupport_introspection_c__ROS_TYPE_STRING:
+      field_type = 0;
+      break;
+    case rosidl_typesupport_introspection_c__ROS_TYPE_INT32:
+      field_type = 1;
+      break;
+    case rosidl_typesupport_introspection_c__ROS_TYPE_UINT32:
+      field_type = 2;
+      break;
+    case rosidl_typesupport_introspection_c__ROS_TYPE_INT16:
+      field_type = 3;
+      break;
+    case rosidl_typesupport_introspection_c__ROS_TYPE_UINT16:
+      field_type = 4;
+      break;
+    // int64/uint64 have codes (5 and 6) but filtering on them does not work:
+    // the core aligns to the absolute buffer offset instead of the offset within
+    // the payload, so an 8-byte field is read 4 bytes past its real position
+    // (ffi/src/data.rs, cdr_parse_field_value). Narrower fields are unaffected
+    // because offset 4 already satisfies their alignment. Registering them
+    // anyway would set is_cft_enabled and then deliver everything, which is
+    // worse than reporting no filter: callers can filter themselves once they
+    // know the middleware will not. Restore these two once the core is fixed.
+    case rosidl_typesupport_introspection_c__ROS_TYPE_INT64:
+    case rosidl_typesupport_introspection_c__ROS_TYPE_UINT64:
+      return false;
+    case rosidl_typesupport_introspection_c__ROS_TYPE_INT8:
+      field_type = 7;
+      break;
+    case rosidl_typesupport_introspection_c__ROS_TYPE_UINT8:
+      field_type = 8;
+      break;
+    case rosidl_typesupport_introspection_c__ROS_TYPE_BOOL:
+      field_type = 9;
+      break;
+    default:
+      return false;
   }
-
   descriptors.names.emplace_back(name);
-  descriptors.types.push_back(static_cast<uint32_t>(field_type));
+  descriptors.types.push_back(field_type);
   descriptors.is_key.push_back(is_key ? 1U : 0U);
   descriptors.has_key = descriptors.has_key || is_key;
   return true;
@@ -556,6 +610,7 @@ destroy_subscription_reader_entities(
     return;
   }
 
+  rmw_int2dds_cpp::waitset_registry_clean_caches();
   if (sub_data->status_condition != nullptr) {
     int2dds_statuscondition_delete(sub_data->status_condition);
     sub_data->status_condition = nullptr;
@@ -594,6 +649,8 @@ create_subscription_reader(
       context_data->default_subscriber,
       sub_data->topic,
       reader_qos,
+      nullptr,
+      0,
       &sub_data->datareader);
   } else {
     std::vector<const char *> parameter_ptrs;
@@ -616,6 +673,8 @@ create_subscription_reader(
         context_data->default_subscriber,
         sub_data->content_filtered_topic,
         reader_qos,
+        nullptr,
+        0,
         &sub_data->datareader);
       if (dds_ret != INT2DDS_RET_OK && sub_data->content_filtered_topic != nullptr) {
         int2dds_delete_contentfilteredtopic(sub_data->content_filtered_topic);
@@ -674,6 +733,17 @@ rmw_create_subscription(
 
   if (node->implementation_identifier != rmw_int2dds_cpp::implementation_identifier) {
     RMW_SET_ERROR_MSG("node not from this implementation");
+    return nullptr;
+  }
+
+  // int2dds does not expose per-endpoint network flows (see
+  // rmw_subscription_get_network_flow_endpoints), so a strict requirement for
+  // unique ones cannot be honoured and must be reported as an error rather than
+  // silently ignored.
+  if (subscription_options->require_unique_network_flow_endpoints ==
+    RMW_UNIQUE_NETWORK_FLOW_ENDPOINTS_STRICTLY_REQUIRED)
+  {
+    RMW_SET_ERROR_MSG("Unique network flow endpoints are not supported by rmw_int2dds_cpp");
     return nullptr;
   }
 
@@ -795,7 +865,6 @@ rmw_create_subscription(
         dds_topic_name.c_str(),
         dds_type_name.c_str(),
         rmw_int2dds_cpp::INT2DDS_EXTENSIBILITY_MUTABLE,
-        descriptors.has_key,
         nullptr,
         descriptors.name_ptrs.data(),
         descriptors.types.data(),
@@ -865,6 +934,12 @@ rmw_create_subscription(
   subscription->options = *subscription_options;
   subscription->can_loan_messages = false;
   subscription->is_cft_enabled = !sub_data->content_filter_expression.empty();
+#if __has_include("rmw/get_service_endpoint_info.h")
+  // Lyrical+ field (rmw 7.10): int2dds creates DDS content-filtered topics natively.
+  // options.acceptable_buffer_backends (same release) needs no handling here: this
+  // RMW only ever delivers CPU buffers, and CPU is always implicitly acceptable.
+  subscription->is_cft_supported = true;
+#endif
 
   if (subscription->topic_name == nullptr) {
     rmw_subscription_free(subscription);
@@ -995,10 +1070,10 @@ rmw_subscription_count_matched_publishers(
     return RMW_RET_ERROR;
   }
 
-  int32_t total_count = 0;
-  int32_t current_count = 0;
-  Int2DdsRet ret = int2dds_get_subscription_matched_status(
-    sub_data->datareader, &total_count, &current_count);
+  Int2DdsSubscriptionMatchedStatus matched_status = {};
+  Int2DdsRet ret = int2dds_datareader_get_subscription_matched_status(
+    sub_data->datareader, &matched_status);
+  const int32_t current_count = matched_status.current_count;
   if (ret != INT2DDS_RET_OK) {
     RMW_SET_ERROR_MSG("failed to get subscription matched status");
     return RMW_RET_ERROR;
@@ -1208,6 +1283,7 @@ rmw_init_subscription_allocation(
   (void)type_support;
   (void)message_bounds;
   (void)allocation;
+  RMW_SET_ERROR_MSG("rmw_init_subscription_allocation is not supported by rmw_int2dds_cpp");
   return RMW_RET_UNSUPPORTED;
 }
 
@@ -1215,6 +1291,7 @@ rmw_ret_t
 rmw_fini_subscription_allocation(rmw_subscription_allocation_t * allocation)
 {
   (void)allocation;
+  RMW_SET_ERROR_MSG("rmw_fini_subscription_allocation is not supported by rmw_int2dds_cpp");
   return RMW_RET_UNSUPPORTED;
 }
 
@@ -1246,6 +1323,7 @@ rmw_subscription_get_network_flow_endpoints(
   (void)allocator;
   (void)network_flow_endpoint_array;
   // Not supported by int2dds
+  RMW_SET_ERROR_MSG("rmw_subscription_get_network_flow_endpoints is not supported");
   return RMW_RET_UNSUPPORTED;
 }
 }  // extern "C"

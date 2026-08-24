@@ -40,7 +40,7 @@ struct SerializedWriteLoanGuard
   ~SerializedWriteLoanGuard()
   {
     if (loan != nullptr) {
-      (void)int2dds_abort_serialized_write(loan);
+      (void)int2dds_datawriter_abort_serialized_write(loan);
     }
   }
 
@@ -185,7 +185,7 @@ rmw_publish(
     size_t loan_capacity = 0;
     SerializedWriteLoanGuard loan_guard;
     const uint64_t prepare_t0 = profile ? now_us() : 0;
-    ret = int2dds_prepare_serialized_write(
+    ret = int2dds_datawriter_prepare_serialized_write(
       pub_data->datawriter,
       capacity_hint,
       &loan_buffer,
@@ -206,12 +206,10 @@ rmw_publish(
 
       if (serialization_success && !serializer.has_error()) {
         const uint64_t commit_t0 = profile ? now_us() : 0;
-        ret = int2dds_commit_serialized_write(
+        ret = int2dds_datawriter_commit_serialized_write(
           pub_data->datawriter,
           loan_guard.release(),
-          serialized_size,
-          nullptr,
-          0);
+          serialized_size);
         if (profile) {
           commit_us = now_us() - commit_t0;
         }
@@ -256,12 +254,10 @@ rmw_publish(
 
   // Write to DDS
   const uint64_t write_t0 = profile ? now_us() : 0;
-  ret = int2dds_write_serialized(
+  ret = int2dds_datawriter_write_serialized(
     pub_data->datawriter,
     serializer.get_data(),
-    serialized_size,
-    nullptr,
-    0);
+    serialized_size);
   if (profile) {
     fallback_write_us = now_us() - write_t0;
   }
@@ -307,12 +303,10 @@ rmw_publish_serialized_message(
   }
 
   // Write already serialized message directly
-  Int2DdsRet ret = int2dds_write_serialized(
+  Int2DdsRet ret = int2dds_datawriter_write_serialized(
     pub_data->datawriter,
     serialized_message->buffer,
-    serialized_message->buffer_length,
-    nullptr,
-    0);
+    serialized_message->buffer_length);
 
   if (ret != INT2DDS_RET_OK) {
     RMW_SET_ERROR_MSG("failed to write serialized message");
@@ -331,6 +325,7 @@ rmw_publish_loaned_message(
   (void)publisher;
   (void)ros_message;
   (void)allocation;
+  RMW_SET_ERROR_MSG("rmw_publish_loaned_message is not supported by rmw_int2dds_cpp");
   return RMW_RET_UNSUPPORTED;
 }
 
@@ -343,6 +338,7 @@ rmw_init_publisher_allocation(
   (void)type_support;
   (void)message_bounds;
   (void)allocation;
+  RMW_SET_ERROR_MSG("rmw_init_publisher_allocation is not supported by rmw_int2dds_cpp");
   return RMW_RET_UNSUPPORTED;
 }
 
@@ -350,6 +346,7 @@ rmw_ret_t
 rmw_fini_publisher_allocation(rmw_publisher_allocation_t * allocation)
 {
   (void)allocation;
+  RMW_SET_ERROR_MSG("rmw_fini_publisher_allocation is not supported by rmw_int2dds_cpp");
   return RMW_RET_UNSUPPORTED;
 }
 }  // extern "C"

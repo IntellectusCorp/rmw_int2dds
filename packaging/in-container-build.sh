@@ -4,7 +4,8 @@ set -euo pipefail
 
 : "${ROS_DISTRO:?ROS_DISTRO must be set}"
 RMW_REPO="${RMW_REPO:?RMW_REPO must be set (mount of rmw_int2dds/)}"
-VENDOR_SRC="${VENDOR_SRC:?VENDOR_SRC must be set (mount of int2dds_ffi_vendor/)}"
+# Both packages live in this repository.
+VENDOR_SRC="${RMW_REPO}/int2dds_ffi_vendor"
 RMW_SRC="${RMW_REPO}/rmw_int2dds_cpp"
 ARCH="$(dpkg --print-architecture)"
 OUT="${RMW_REPO}/dist/${ROS_DISTRO}/${ARCH}"
@@ -68,11 +69,9 @@ apt-get install -y "${OUT}"/ros-"${ROS_DISTRO}"-int2dds-ffi-vendor_*.deb
 echo "::endgroup::"
 
 echo "::group::build rmw deb"
-# Skip these keys at rosdep-install time:
+# Skip this key at rosdep-install time:
 #  - int2dds_ffi_vendor: already installed above as a local .deb (not in any apt repo)
-#  - test_rmw_implementation: a test_depend; binary deb builds do not run tests, and
-#    it is resolved for control generation via the local rosdep map.
-build_pkg "${RMW_SRC}" "int2dds_ffi_vendor test_rmw_implementation"
+build_pkg "${RMW_SRC}" "int2dds_ffi_vendor"
 echo "::endgroup::"
 
 echo "Artifacts in ${OUT}:"

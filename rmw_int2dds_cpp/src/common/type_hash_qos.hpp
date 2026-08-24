@@ -66,6 +66,20 @@ resolve_actual_qos(rmw_qos_profile_t * qos)
   {
     qos->durability = RMW_QOS_POLICY_DURABILITY_VOLATILE;
   }
+#ifdef RMW_QOS_DEADLINE_BEST_AVAILABLE
+  // Publishers and subscriptions negotiate BEST_AVAILABLE against existing
+  // endpoints (qos_profile_get_best_available_for_topic_*), so it never reaches
+  // here for them. Services and clients do not run that negotiation, so a
+  // BEST_AVAILABLE request survives; map it to the concrete value the create
+  // path actually applies (Reliable/Volatile) so get_actual_qos does not report
+  // the unresolved BEST_AVAILABLE marker.
+  if (qos->reliability == RMW_QOS_POLICY_RELIABILITY_BEST_AVAILABLE) {
+    qos->reliability = RMW_QOS_POLICY_RELIABILITY_RELIABLE;
+  }
+  if (qos->durability == RMW_QOS_POLICY_DURABILITY_BEST_AVAILABLE) {
+    qos->durability = RMW_QOS_POLICY_DURABILITY_VOLATILE;
+  }
+#endif
   if (qos->liveliness == RMW_QOS_POLICY_LIVELINESS_SYSTEM_DEFAULT ||
     qos->liveliness == RMW_QOS_POLICY_LIVELINESS_UNKNOWN)
   {
@@ -130,6 +144,48 @@ encode_service_response_type_hash_user_data(const rosidl_service_type_support_t 
     return {};
   }
   return encode_message_type_hash_user_data(type_support->response_typesupport);
+}
+
+// REP-2011 hash of the *service* type as a whole, distinct from the per-message
+// request/response hashes above.
+inline const rosidl_type_hash_t *
+get_service_type_hash(const rosidl_service_type_support_t * type_support)
+{
+#ifdef RMW_INT2DDS_HAS_TYPE_HASH
+  if (type_support == nullptr || type_support->get_type_hash_func == nullptr) {
+    return nullptr;
+  }
+  return type_support->get_type_hash_func(type_support);
+#else
+  (void)type_support;
+  return nullptr;
+#endif
+}
+
+// ROS 2 Lyrical transports the service type hash in USER_DATA as "sertypehash=...;"
+// (appended after the message "typehash=...;" pair) and records it in the GraphCache
+// so rmw_get_clients/servers_info_by_service can report it. Older distros have
+// neither the encoder nor the GraphCache parameter; collapse to an empty string.
+inline std::string
+encode_service_type_hash_user_data(const rosidl_service_type_support_t * type_support)
+{
+#if defined(RMW_INT2DDS_HAS_TYPE_HASH) && __has_include("rmw/get_service_endpoint_info.h")
+  const rosidl_type_hash_t * service_type_hash = get_service_type_hash(type_support);
+  if (service_type_hash == nullptr) {
+    return {};
+  }
+  std::string encoded;
+  if (RMW_RET_OK !=
+    rmw_dds_common::encode_sertype_hash_for_user_data_qos(*service_type_hash, encoded))
+  {
+    rmw_reset_error();
+    return {};
+  }
+  return encoded;
+#else
+  (void)type_support;
+  return {};
+#endif
 }
 
 inline void

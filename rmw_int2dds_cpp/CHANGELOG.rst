@@ -4,7 +4,91 @@ Changelog for package rmw_int2dds_cpp
 
 Forthcoming
 -----------
-* No changes yet.
+* Fix participant/context lifecycle: delete contained entities before the
+  participant, release the participant when the last node is destroyed,
+  recreate context DDS resources on node creation, and release all context
+  resources on init failure.
+* Apply requested QoS in services/clients; resolve BEST_AVAILABLE and
+  SYSTEM_DEFAULT in the service actual QoS; apply deadline/liveliness.
+* Wire localhost-only and static-peer discovery into SPDP.
+* Reject STRICTLY_REQUIRED unique network flow endpoints; restore content-filter
+  field codes; set error messages on unsupported API stubs; ignore only
+  same-node local publications; randomize the GID process field.
+* Add dynamic message type support (rosidl dynamic typesupport): primitives,
+  string, fixed arrays, sequences and nested structs.
+* Batch ``take_sequence`` into a single serialized take.
+* Move development test executables into ``test/``; align QUALITY_DECLARATION
+  and README test status with the current state.
+* Decide ``rmw_wait`` readiness before attaching to the wait set, so a call that
+  finds work already pending skips the attach/wait/detach round trip. Guard
+  conditions join the pre-wait scan through a non-destructive peek, and a
+  zero-timeout poll no longer attaches at all. Saturated single-subscription
+  throughput roughly doubles.
+* Add ``test_rmw_wait_guards``, the first automated test registered with CTest:
+  guard condition readiness, trigger consumption, timeout handling and wake-up
+  from another thread, all without a DDS participant.
+* Cache wait set attachments across ``rmw_wait`` calls, rebuild them by delta
+  instead of a full reset, and skip the event status mask update when it is
+  already set.
+* Harden the persistent attachment cache against teardown and concurrency:
+  detach attachments before removing the wait set from the registry, keep the
+  registry valid during static destruction, make the registry insert
+  exception-safe, clean caches and delete the status condition on the detached
+  service/client destroy path, clean caches before freeing the context guard,
+  re-flag an entity for re-attach when its reader or event status condition is
+  momentarily null, and close the destroy-vs-cache race in the attachments.
+* Serialize the concurrent service RPC paths under a multi-threaded executor:
+  guard the response writer in ``rmw_send_response`` and the request/response
+  readers in ``rmw_take_request`` / ``rmw_take_response`` per entity, fixing an
+  intermittent service round-trip hang.
+* Build the graph cache from SEDP endpoint-discovery push callbacks, remove
+  graph entities on the dispose signal instead of on absence from a snapshot,
+  and identify the local participant by its own key.
+* Default ``INT2DDS_DATA_FRAG_SIZE`` to 1344 and ``INT2DDS_MAX_MESSAGE_SIZE`` to
+  13440 in ``rmw_init``, and document the loopback discovery env vars in the
+  usage table.
+* Drop key/key_len from serialized write calls and bulk-copy fixed-width
+  primitive arrays in the CDR codec. The serialized write API lost those two
+  arguments upstream, so this package no longer compiled without the change; the
+  bulk copy was verified byte-identical to FastCDR for 1-, 2-, 4- and 8-byte
+  element sequences.
+* Keep the discovery listener reading when a sample outgrows its buffer. The
+  reader is KEEP_ALL, so retrying an oversized sample at the same size spun on it
+  forever and blocked every participant queued behind it.
+* Fail cleanly instead of writing through a null element when deserializing a
+  fixed primitive C array, matching the guard already on the serialize side.
+* Move ``int2dds_ffi_vendor`` into this repository. The standalone repository is
+  now a release host and carries no sources, so a clean checkout could not be
+  built without this.
+* Move the rclcpp-based QoS/perf probes and the dynamic message checks into the
+  new ``rmw_int2dds_validation`` package, and drop ``rclcpp``/``rcl`` from this
+  one. Depending on them closed the
+  ``rclcpp -> rcl -> rmw_implementation -> rmw_int2dds_cpp`` build cycle.
+* Declare every dependency ``CMakeLists.txt`` looks for, and require
+  ``rosidl_dynamic_typesupport`` rather than probing it quietly - an undeclared
+  optional dependency is how a build-farm job drops dynamic message support and
+  still reports success.
+* Decide the matched-event target from the installed rmw headers instead of
+  ``$ENV{ROS_DISTRO}``, which is only set where ``ros_environment`` is installed.
+* Register the standalone checks with CTest and add a build workflow, so
+  ``colcon test`` exercises the rmw C API and the FFI rather than linters alone.
+* Add ``INT2DDS_FFI_TARBALL`` to the vendor package, so a build can consume a
+  locally built FFI tarball instead of the published release asset - the release
+  tag alone does not identify the ABI.
+* Build on ROS 2 Lyrical: C++20, and namespaced CMake targets instead of
+  ``ament_target_dependencies()``, which ament_cmake no longer defines.
+* Adapt to the Lyrical rmw API behind ``__has_include`` probes, so the same
+  sources still build on Jazzy and Humble: enclave string ownership through
+  ``rmw_enclave_options_copy``/``_fini``, no ``rmw_localhost_only_t``, no
+  ``RMW_QOS_POLICY_LIVELINESS_MANUAL_BY_NODE``, and ``RMW_RET_INVALID_ARGUMENT``
+  where the conformance suite previously expected ``RMW_RET_ERROR``.
+* Implement ``rmw_get_clients_info_by_service`` and
+  ``rmw_get_servers_info_by_service``, new in Lyrical, and publish the
+  service-level type hash the graph needs to answer them.
+* Delete a node's publisher DataWriters in ``rmw_destroy_node``. Lyrical's rclpy
+  defers publisher teardown, so ``rmw_destroy_publisher`` may never run before
+  the participant is gone, orphaning each cycle's DataWriter history cache.
+* Contributors: Intellectus Corp.
 
 0.0.1 (2026-06-25)
 ------------------

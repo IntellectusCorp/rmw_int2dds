@@ -17,11 +17,14 @@
 
 #include <array>
 #include <atomic>
+#include <condition_variable>
 #include <cstddef>
+#include <cstdint>
 #include <map>
 #include <memory>
 #include <mutex>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include "rmw/event.h"
@@ -63,6 +66,7 @@ constexpr int32_t INT2DDS_EXTENSIBILITY_MUTABLE = 2;
 // Forward declaration
 struct ServiceData;
 struct ClientData;
+struct PublisherData;
 
 /// One user event-callback registration (rmw_event_callback_t plus the backlog
 /// of occurrences that fired before the callback was set). Fired from int2dds
@@ -93,6 +97,14 @@ struct ContextData
   Int2DdsDataReader * discovery_reader{nullptr};
 
   size_t domain_id{0};
+  // Precomputed "ip:port,..." list wired into int2dds SPDP unicast discovery via
+  // the "int2dds.initial_peers" participant property. Empty unless the user set
+  // rmw_discovery_options static_peers. Computed once in rmw_init.
+  std::string initial_peers;
+  // True when the user requested localhost-only discovery. Applied via
+  // multicast_ttl=0 so multicast SPDP stays on the host (remote hosts do not
+  // auto-discover this participant; local discovery is unaffected). Set in rmw_init.
+  bool localhost_only{false};
   bool is_shutdown{false};
   std::atomic<int> ref_count{0};
   std::mutex mutex;
@@ -104,6 +116,26 @@ struct ContextData
   std::mutex remote_sync_mutex;
   std::map<std::array<uint8_t, RMW_GID_STORAGE_SIZE>, bool> synced_remote_entities;
 };
+
+/// Create the DDS resources a context needs: participant factory, participant,
+/// default publisher/subscriber, graph guard condition and node-graph discovery.
+/// Uses context_data->domain_id, so that must be set first.
+///
+/// rmw_destroy_node releases these once the last node is gone (a client library
+/// may keep the context alive, so rmw_context_fini may never run). rmw_create_node
+/// calls this again to bring them back, mirroring rmw_fastrtps, where
+/// increment_context_impl_ref_count() recreates what
+/// decrement_context_impl_ref_count() released. Rolls back on failure and leaves
+/// every pointer null.
+///
+/// \return RMW_RET_OK on success, otherwise the error is already set.
+rmw_ret_t
+acquire_context_resources(ContextData * context_data, const char * enclave);
+
+/// Release what acquire_context_resources() created, nulling every pointer so a
+/// later acquire or fini is safe.
+void
+release_context_resources(ContextData * context_data);
 
 /// Node implementation data
 struct NodeData
@@ -122,6 +154,7 @@ struct NodeData
   std::vector<rmw_gid_t> clients;
   std::vector<ServiceData *> live_services;
   std::vector<ClientData *> live_clients;
+  std::vector<PublisherData *> live_publishers;
 };
 
 /// Publisher implementation data
@@ -220,16 +253,45 @@ struct GuardConditionData
 };
 
 /// Wait set implementation data
+// Identity of an event cached by a wait set: the entity data pointer plus the
+// event type, since rmw_event_t wrappers are not stable across rmw_wait calls.
+struct WaitSetCachedEvent
+{
+  void * entity_data{nullptr};
+  rmw_event_type_t event_type{RMW_EVENT_INVALID};
+};
+
 struct WaitSetData
 {
   Int2DdsWaitSet * waitset{nullptr};
 
-  // Tracking attached entities
-  std::vector<rmw_subscription_t *> attached_subscriptions;
-  std::vector<rmw_guard_condition_t *> attached_guard_conditions;
-  std::vector<rmw_service_t *> attached_services;
-  std::vector<rmw_client_t *> attached_clients;
-  std::vector<rmw_event_t *> attached_events;
+  // Guards the cached/attached state below against entity-destroy cache cleaning.
+  std::mutex lock;
+  std::condition_variable cache_cv;
+  bool inuse{false};
+  // True while rmw_wait reads or rewrites the cache/attachments outside the
+  // blocking FFI wait. Cleaners wait this flag out (signalled via cache_cv);
+  // it never spans int2dds_waitset_wait_ex_ns, so the wait is always short.
+  bool cache_busy{false};
+
+  // Entity data pointers from the previous rmw_wait call. When the incoming
+  // arrays are identical, the conditions attached last time are still attached
+  // and the whole attach/detach cycle is skipped.
+  std::vector<void *> cached_subscriptions;
+  std::vector<void *> cached_guard_conditions;
+  std::vector<void *> cached_services;
+  std::vector<void *> cached_clients;
+  std::vector<WaitSetCachedEvent> cached_events;
+
+  // Attached conditions, each stamped with the attach_generation that last
+  // wanted it. A rebuild detaches whatever keeps an older stamp.
+  uint64_t attach_generation{0};
+  // Set when an attach failed, so the next rmw_wait rebuilds even if the entity
+  // set is unchanged - including when it is empty, which no comparison against
+  // the cached lists can express.
+  bool force_rebuild{false};
+  std::unordered_map<Int2DdsStatusCondition *, uint64_t> attached_conditions;
+  std::unordered_map<Int2DdsGuardCondition *, uint64_t> attached_guards;
 };
 
 /// Service implementation data
@@ -257,6 +319,8 @@ struct ServiceData
   // DataReader listener on the request reader.
   std::mutex listener_mutex;
   CallbackSlot new_request_slot;
+  std::mutex request_take_mutex;
+  std::mutex response_write_mutex;
 };
 
 /// Client implementation data
@@ -287,6 +351,7 @@ struct ClientData
   // the executor resolves by taking nothing.
   std::mutex listener_mutex;
   CallbackSlot new_response_slot;
+  std::mutex response_take_mutex;
 };
 
 /// Event implementation data

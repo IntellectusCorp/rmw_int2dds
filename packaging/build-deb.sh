@@ -2,14 +2,14 @@
 # Host-side launcher: build the two int2DDS .debs for one (distro, arch).
 # Runs the build inside a matching ros:<distro>-ros-base container (native or QEMU).
 #
-# Usage: packaging/build-deb.sh <jazzy|humble|rolling> <amd64|arm64|armhf>
+# Usage: packaging/build-deb.sh <humble|jazzy|lyrical|rolling> <amd64|arm64|armhf>
 #
 # On Windows Git Bash, prefix with MSYS_NO_PATHCONV=1 so docker -v mount paths
-# are not mangled:  MSYS_NO_PATHCONV=1 packaging/build-deb.sh jazzy arm64
+# are not mangled:  MSYS_NO_PATHCONV=1 packaging/build-deb.sh lyrical arm64
 set -euo pipefail
 
-DISTRO="${1:?usage: build-deb.sh <jazzy|humble|rolling> <amd64|arm64|armhf>}"
-ARCH="${2:?usage: build-deb.sh <jazzy|humble|rolling> <amd64|arm64|armhf>}"
+DISTRO="${1:?usage: build-deb.sh <humble|jazzy|lyrical|rolling> <amd64|arm64|armhf>}"
+ARCH="${2:?usage: build-deb.sh <humble|jazzy|lyrical|rolling> <amd64|arm64|armhf>}"
 
 case "${ARCH}" in
   amd64) PLATFORM=linux/amd64 ;;
@@ -18,14 +18,14 @@ case "${ARCH}" in
   *) echo "unknown arch '${ARCH}' (expected amd64|arm64|armhf)" >&2; exit 1 ;;
 esac
 case "${DISTRO}" in
-  jazzy|humble|rolling) ;;
-  *) echo "unknown distro '${DISTRO}' (expected jazzy|humble|rolling)" >&2; exit 1 ;;
+  humble|jazzy|lyrical|rolling) ;;
+  *) echo "unknown distro '${DISTRO}' (expected humble|jazzy|lyrical|rolling)" >&2; exit 1 ;;
 esac
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-VENDOR_REPO_PATH="${VENDOR_REPO_PATH:-${REPO_ROOT}/../int2dds_ffi_vendor}"
-if [ ! -f "${VENDOR_REPO_PATH}/package.xml" ]; then
-  echo "vendor repo not found at ${VENDOR_REPO_PATH}; set VENDOR_REPO_PATH" >&2
+# int2dds_ffi_vendor is a package inside this repository (not a sibling checkout).
+if [ ! -f "${REPO_ROOT}/int2dds_ffi_vendor/package.xml" ]; then
+  echo "int2dds_ffi_vendor/package.xml missing from ${REPO_ROOT}; incomplete checkout?" >&2
   exit 1
 fi
 
@@ -35,9 +35,6 @@ docker run --privileged --rm tonistiigi/binfmt --install all >/dev/null 2>&1 || 
 docker run --rm --platform "${PLATFORM}" \
   -e ROS_DISTRO="${DISTRO}" \
   -e RMW_REPO=/ws/rmw_int2dds \
-  -e VENDOR_SRC=/ws/int2dds_ffi_vendor \
-  -e INT2DDS_FFI_TOKEN="${INT2DDS_FFI_TOKEN:-}" \
   -v "${REPO_ROOT}":/ws/rmw_int2dds \
-  -v "${VENDOR_REPO_PATH}":/ws/int2dds_ffi_vendor \
   "ros:${DISTRO}-ros-base" \
   bash /ws/rmw_int2dds/packaging/in-container-build.sh
