@@ -48,7 +48,33 @@ Forthcoming
   13440 in ``rmw_init``, and document the loopback discovery env vars in the
   usage table.
 * Drop key/key_len from serialized write calls and bulk-copy fixed-width
-  primitive arrays in the CDR codec.
+  primitive arrays in the CDR codec. The serialized write API lost those two
+  arguments upstream, so this package no longer compiled without the change; the
+  bulk copy was verified byte-identical to FastCDR for 1-, 2-, 4- and 8-byte
+  element sequences.
+* Keep the discovery listener reading when a sample outgrows its buffer. The
+  reader is KEEP_ALL, so retrying an oversized sample at the same size spun on it
+  forever and blocked every participant queued behind it.
+* Fail cleanly instead of writing through a null element when deserializing a
+  fixed primitive C array, matching the guard already on the serialize side.
+* Move ``int2dds_ffi_vendor`` into this repository. The standalone repository is
+  now a release host and carries no sources, so a clean checkout could not be
+  built without this.
+* Move the rclcpp-based QoS/perf probes and the dynamic message checks into the
+  new ``rmw_int2dds_validation`` package, and drop ``rclcpp``/``rcl`` from this
+  one. Depending on them closed the
+  ``rclcpp -> rcl -> rmw_implementation -> rmw_int2dds_cpp`` build cycle.
+* Declare every dependency ``CMakeLists.txt`` looks for, and require
+  ``rosidl_dynamic_typesupport`` rather than probing it quietly - an undeclared
+  optional dependency is how a build-farm job drops dynamic message support and
+  still reports success.
+* Decide the matched-event target from the installed rmw headers instead of
+  ``$ENV{ROS_DISTRO}``, which is only set where ``ros_environment`` is installed.
+* Register the standalone checks with CTest and add a build workflow, so
+  ``colcon test`` exercises the rmw C API and the FFI rather than linters alone.
+* Add ``INT2DDS_FFI_TARBALL`` to the vendor package, so a build can consume a
+  locally built FFI tarball instead of the published release asset - the release
+  tag alone does not identify the ABI.
 * Contributors: Intellectus Corp.
 
 0.0.1 (2026-06-25)
