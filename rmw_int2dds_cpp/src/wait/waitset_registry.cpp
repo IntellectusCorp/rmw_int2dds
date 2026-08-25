@@ -17,6 +17,7 @@
 #include <algorithm>
 #include <mutex>
 #include <new>
+#include <utility>
 #include <vector>
 
 #include "int2dds-ffi.h"  // NOLINT(build/include_subdir): vendored FFI header
