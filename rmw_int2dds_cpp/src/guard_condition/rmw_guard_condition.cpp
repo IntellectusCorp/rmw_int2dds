@@ -78,12 +78,11 @@ rmw_destroy_guard_condition(rmw_guard_condition_t * guard_condition)
   auto * gc_data = static_cast<rmw_int2dds_cpp::GuardConditionData *>(guard_condition->data);
   if (gc_data != nullptr) {
     // Clean regardless of handle ownership: gc_data itself is what wait set
-    // caches key on, and it is freed below either way.
+    // caches key on.
     rmw_int2dds_cpp::waitset_registry_clean_caches();
-    if (gc_data->owns_guard_condition && gc_data->guard_condition != nullptr) {
-      int2dds_guardcondition_delete(gc_data->guard_condition);
-    }
-    delete gc_data;
+    // rcl hands rmw_wait this pointer and rclcpp may destroy it mid-scan, so
+    // the registry frees it once no wait set can reach it.
+    rmw_int2dds_cpp::waitset_registry_retire_guard(gc_data);
   }
 
   rmw_guard_condition_free(guard_condition);

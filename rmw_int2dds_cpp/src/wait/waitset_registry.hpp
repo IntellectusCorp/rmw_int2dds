@@ -36,6 +36,10 @@ void waitset_registry_clean_caches();
 // access to ws_data, either by holding ws_data->lock or by having set inuse.
 void waitset_detach_all(WaitSetData * ws_data);
 
+// Takes over a destroyed guard condition instead of freeing it: rclcpp
+// destroys them while another executor thread is still scanning that set.
+void waitset_registry_retire_guard(GuardConditionData * gc_data);
+
 }  // namespace rmw_int2dds_cpp
 
 #endif  // WAIT__WAITSET_REGISTRY_HPP_
