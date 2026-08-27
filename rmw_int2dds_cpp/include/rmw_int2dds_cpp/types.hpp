@@ -225,6 +225,9 @@ struct SubscriptionData
   size_t matched_unread{0};
   // See PublisherData::matched_total_seen.
   size_t matched_total_seen{0};
+  // RMW-internal matched-change flag (matched_mutex): set by the DataReader
+  // matched listener on every match/unmatch, cleared when the event is taken.
+  bool matched_changed{false};
 
   // Data/status delivery bridge (see CallbackSlot); fed by the combined
   // int2dds DataReader listener registered at creation. new_message_slot backs
