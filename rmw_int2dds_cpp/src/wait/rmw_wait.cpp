@@ -281,6 +281,12 @@ event_is_triggered(const rmw_event_t * event)
     if (sub_data == nullptr || sub_data->datareader == nullptr) {
       return false;
     }
+#ifdef RMW_INT2DDS_HAS_MATCHED_EVENT
+    if (event_data->event_type == RMW_EVENT_SUBSCRIPTION_MATCHED) {
+      std::lock_guard<std::mutex> lock(sub_data->matched_mutex);
+      return sub_data->matched_changed;
+    }
+#endif
     ret = int2dds_datareader_get_status_changes(sub_data->datareader, &status_changes);
   }
 

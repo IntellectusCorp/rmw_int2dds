@@ -79,6 +79,7 @@ struct CallbackSlot
 };
 
 /// Context implementation data
+struct GraphListenerState;  // off-thread graph-cache applier
 struct ContextData
 {
   Int2DdsParticipantFactory * factory{nullptr};
@@ -114,6 +115,10 @@ struct ContextData
   // remote_sync_mutex.
   std::mutex remote_sync_mutex;
   std::map<std::array<uint8_t, RMW_GID_STORAGE_SIZE>, bool> synced_remote_entities;
+
+  // Off-thread applier that drains SEDP discovery events so the DDS discovery
+  // callback only enqueues (no GraphCache work on the discovery thread).
+  GraphListenerState * graph_listener{nullptr};
 };
 
 /// Create the DDS resources a context needs: participant factory, participant,
@@ -223,6 +228,9 @@ struct SubscriptionData
   size_t matched_unread{0};
   // See PublisherData::matched_total_seen.
   size_t matched_total_seen{0};
+  // RMW-internal matched-change flag (matched_mutex): set by the DataReader
+  // matched listener on every match/unmatch, cleared when the event is taken.
+  bool matched_changed{false};
 
   // Data/status delivery bridge (see CallbackSlot); fed by the combined
   // int2dds DataReader listener registered at creation. new_message_slot backs
