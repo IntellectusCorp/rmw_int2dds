@@ -573,6 +573,7 @@ rmw_take_sequence(
     return RMW_RET_OK;
   }
   if (ret != INT2DDS_RET_OK) {
+    int2dds_sample_seq_delete(seq);
     RMW_SET_ERROR_MSG("failed to batch-take from DDS");
     return RMW_RET_ERROR;
   }
