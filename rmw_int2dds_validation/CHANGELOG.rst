@@ -1,0 +1,13 @@
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Changelog for package rmw_int2dds_validation
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+0.1.1 (2026-08-28)
+------------------
+* Split the rclcpp and rclpy validation probes out of ``rmw_int2dds_cpp`` into
+  this package: QoS behaviour (durability, history depth, deadline, liveliness,
+  lifespan), content-filtered topic lifecycle, executor callback smoke checks,
+  and latency/throughput/readiness measurements. An RMW implementation cannot
+  depend on ``rclcpp`` without closing a build dependency cycle, so the probes
+  live here.
+* Contributors: Intellectus Corp.

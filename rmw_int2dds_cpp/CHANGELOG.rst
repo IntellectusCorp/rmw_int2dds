@@ -2,8 +2,8 @@
 Changelog for package rmw_int2dds_cpp
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Forthcoming
------------
+0.1.1 (2026-08-28)
+------------------
 * Fix participant/context lifecycle: delete contained entities before the
   participant, release the participant when the last node is destroyed,
   recreate context DDS resources on node creation, and release all context
@@ -90,6 +90,19 @@ Forthcoming
   publisher teardown from Lyrical on, so ``rmw_destroy_publisher`` may never run
   before the participant is gone, orphaning each cycle's DataWriter history
   cache.
+* Narrow the buildtool dependency from ``ament_cmake_ros`` to
+  ``ament_cmake_ros_core``. The umbrella package exec_depends on
+  ``rmw_test_fixture_implementation``, which build_depends on
+  ``rmw_implementation``, which group_depends back on this package. That cycle
+  broke release job generation for the whole distribution and reverted the
+  0.1.0 release.
+* Load ``ament_cmake_ros_core`` rather than only declaring it, so
+  ``BUILD_SHARED_LIBS`` and ``ROS_PACKAGE_NAME`` are actually set.
+* Raise ``cmake_minimum_required`` to 3.20, the platform minimum for this
+  distribution.
+* Add ``testing/check-dependency-cycle.py``, which replays the build farm's
+  release job sort over this checkout, next to the container test harness.
+* Run that check in CI on every push and pull request to this branch.
 * Contributors: Intellectus Corp.
 
 0.0.1 (2026-06-25)
