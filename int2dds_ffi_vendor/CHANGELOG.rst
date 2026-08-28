@@ -2,6 +2,11 @@
 Changelog for package int2dds_ffi_vendor
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+0.1.1 (2026-08-28)
+------------------
+* No source changes; released in lockstep with ``rmw_int2dds_cpp``.
+* Contributors: Intellectus Corp.
+
 0.1.0 (2026-08-21)
 ------------------
 * Move the package into the ``rmw_int2dds`` repository, next to

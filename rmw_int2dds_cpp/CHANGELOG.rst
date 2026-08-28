@@ -2,6 +2,23 @@
 Changelog for package rmw_int2dds_cpp
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+0.1.1 (2026-08-28)
+------------------
+* Shrink the initial subscription receive buffer to 64 KiB. It is held per
+  subscription and zeroed by ``resize()``, so 2 MiB went resident on every first
+  take; larger payloads still work through the existing grow-on-demand path.
+* Defer guard condition destruction until no wait set can reach it.
+* Include ``<utility>`` for ``std::move`` in the wait set registry.
+* Free the sample sequence when a take returns no data.
+* Poll for NOT_ALIVE endpoints instead of waiting for them.
+* Load the ``ament_cmake_ros`` buildtool dependency the package already declared.
+  Declaring without loading it set neither ``BUILD_SHARED_LIBS`` nor
+  ``ROS_PACKAGE_NAME``.
+* Add ``testing/check-dependency-cycle.py``, which replays the build farm's
+  release job sort over this checkout, next to the container test harness.
+* Run that check in CI on every push and pull request to this branch.
+* Contributors: Intellectus Corp.
+
 0.1.0 (2026-08-21)
 ------------------
 * Fix participant/context lifecycle: delete contained entities before the
