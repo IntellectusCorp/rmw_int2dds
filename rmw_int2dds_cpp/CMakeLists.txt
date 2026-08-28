@@ -19,6 +19,9 @@ endif()
 
 # Find ROS2 dependencies
 find_package(ament_cmake REQUIRED)
+# package.xml declares this; loading it is what sets BUILD_SHARED_LIBS ON and
+# defines ROS_PACKAGE_NAME. Has to run before add_library().
+find_package(ament_cmake_ros REQUIRED)
 find_package(rcutils REQUIRED)
 find_package(rmw REQUIRED)
 find_package(rosidl_runtime_c REQUIRED)
