@@ -78,7 +78,6 @@ struct CallbackSlot
 };
 
 /// Context implementation data
-struct GraphListenerState;  // off-thread graph-cache applier
 struct ContextData
 {
   Int2DdsParticipantFactory * factory{nullptr};
@@ -108,10 +107,6 @@ struct ContextData
   // discovery into rmw_dds_common GraphCache. Guarded by remote_sync_mutex.
   std::mutex remote_sync_mutex;
   std::map<std::array<uint8_t, RMW_GID_STORAGE_SIZE>, bool> synced_remote_entities;
-
-  // Off-thread applier that drains SEDP discovery events so the DDS discovery
-  // callback only enqueues (no GraphCache work on the discovery thread).
-  GraphListenerState * graph_listener{nullptr};
 };
 
 /// Create the DDS resources a context needs: participant factory, participant,
