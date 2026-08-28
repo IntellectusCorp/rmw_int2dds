@@ -114,6 +114,10 @@ static std::string demangle_dds_service_type_name(const std::string & type_name)
 
 constexpr std::chrono::milliseconds kGraphSnapshotTimeout{50};
 
+// Departures are polled, not awaited: a read leaves the instance in place, so one that
+// has not arrived yet is picked up on the next pass. Waiting only burned the timeout.
+constexpr std::chrono::milliseconds kDepartureSnapshotTimeout{0};
+
 static bool is_service_request_topic(const std::string & topic_name)
 {
   return topic_name.compare(0, 2, "rq") == 0 && topic_name.find("Request") != std::string::npos;
@@ -596,12 +600,12 @@ static void sync_remote_entities_to_common(rmw_int2dds_cpp::ContextData * contex
   // node going together, to be rediscovered moments later.
   std::vector<std::pair<std::array<uint8_t, 16>, bool>> gone;
   for (const auto & guid : collect_departed_publications(
-      context_data, static_cast<int>(kGraphSnapshotTimeout.count())))
+      context_data, static_cast<int>(kDepartureSnapshotTimeout.count())))
   {
     gone.emplace_back(guid, false);
   }
   for (const auto & guid : collect_departed_subscriptions(
-      context_data, static_cast<int>(kGraphSnapshotTimeout.count())))
+      context_data, static_cast<int>(kDepartureSnapshotTimeout.count())))
   {
     gone.emplace_back(guid, true);
   }
