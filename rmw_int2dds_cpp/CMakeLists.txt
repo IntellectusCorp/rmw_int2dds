@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.14)
+cmake_minimum_required(VERSION 3.20)
 project(rmw_int2dds_cpp)
 
 # C++20: platform minimum since ROS 2 Kilted (REP 2000); Jazzy toolchains accept it too.
