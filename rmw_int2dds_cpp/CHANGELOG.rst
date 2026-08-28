@@ -2,11 +2,6 @@
 Changelog for package rmw_int2dds_cpp
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Forthcoming
------------
-* Cache the graph from the SEDP push callback and reconcile it periodically,
-  fixing a datawriter over-count from missed disposes.
-
 0.1.0 (2026-08-21)
 ------------------
 * Fix participant/context lifecycle: delete contained entities before the

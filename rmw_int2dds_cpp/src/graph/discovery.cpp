@@ -255,9 +255,8 @@ rmw_ret_t init_discovery(ContextData * context_data, const char * enclave)
   context_data->common->listener_thread =
     std::thread(listener_loop, context_data, type_support);
 
-  // Mirror remote endpoint discovery into the GraphCache via the SEDP push
-  // callback so graph queries need no per-call snapshot pull.
-  register_graph_discovery_callback(context_data);
+  // Consume core SEDP endpoint discovery incrementally (and bootstrap current state).
+  enable_endpoint_push(context_data);
 
   return RMW_RET_OK;
 }
@@ -267,8 +266,8 @@ void fini_discovery(ContextData * context_data)
   if (context_data == nullptr) {
     return;
   }
-  // Stop push-callback graph updates before common/participant teardown.
-  unregister_graph_discovery_callback(context_data);
+  // Stop new callbacks from touching context_data before we tear it down.
+  disable_endpoint_push(context_data);
   if (context_data->common) {
     context_data->common->graph_cache.clear_on_change_callback();
     context_data->common->thread_is_running.store(false);
@@ -288,7 +287,10 @@ void fini_discovery(ContextData * context_data)
     int2dds_delete_topic(context_data->discovery_topic);
     context_data->discovery_topic = nullptr;
   }
-  context_data->common.reset();
+  {
+    std::lock_guard<std::mutex> lock(context_data->remote_sync_mutex);
+    context_data->common.reset();
+  }
 }
 
 rmw_ret_t announce_node(
