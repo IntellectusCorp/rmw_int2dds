@@ -19,7 +19,7 @@
   <author email="int2dds@int2.us">Intellectus Corp.</author>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
-  <buildtool_depend>ament_cmake_ros</buildtool_depend>
+  <buildtool_depend>ament_cmake_ros_core</buildtool_depend>
 
   <!-- Core RMW interface and shared DDS utilities -->
   <depend>rmw</depend>
