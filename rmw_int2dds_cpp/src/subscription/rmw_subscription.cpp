@@ -1028,6 +1028,17 @@ rmw_destroy_subscription(rmw_node_t * node, rmw_subscription_t * subscription)
       node->context->options.allocator.state);
   }
 
+  // Reclaim EventData that rcl never finalized (it never calls
+  // rmw_event_fini), which otherwise leaks one object per event type on every
+  // subscription create/destroy churn. The waitset caches were cleaned above.
+  {
+    std::lock_guard<std::mutex> guard(sub_data->event_mutex);
+    for (auto * ev : sub_data->events) {
+      rmw_int2dds_cpp::free_event_data(ev);
+    }
+    sub_data->events.clear();
+  }
+
   delete sub_data;
   rmw_subscription_free(subscription);
 

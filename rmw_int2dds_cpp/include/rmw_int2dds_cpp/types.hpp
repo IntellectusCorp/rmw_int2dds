@@ -66,6 +66,7 @@ constexpr int32_t INT2DDS_EXTENSIBILITY_MUTABLE = 2;
 // Forward declaration
 struct ServiceData;
 struct ClientData;
+struct EventData;
 
 /// One user event-callback registration (rmw_event_callback_t plus the backlog
 /// of occurrences that fired before the callback was set). Fired from int2dds
@@ -198,6 +199,14 @@ struct PublisherData
   CallbackSlot offered_incompatible_qos_slot;
   CallbackSlot offered_incompatible_type_slot;
   CallbackSlot liveliness_lost_slot;
+
+  // EventData objects created by rmw_publisher_event_init for this
+  // publisher. rcl/rclpy never call rmw_event_fini (measured: fini count 0), so
+  // unless the entity owns them, every create/destroy churn leaks one EventData
+  // per event type (int2dds-specific; the reference RMW ties event data to the
+  // entity likewise). Guarded by event_mutex; freed in rmw_destroy_publisher.
+  std::mutex event_mutex;
+  std::vector<EventData *> events;
 };
 
 /// Subscription implementation data
@@ -249,6 +258,15 @@ struct SubscriptionData
   // rmw_take and rmw_take_serialized_message may share the same scratch buffer.
   std::mutex take_buffer_mutex;
   std::vector<uint8_t> take_buffer;
+
+  // EventData objects created by rmw_subscription_event_init for this
+  // subscription. rcl/rclpy never call rmw_event_fini (measured: fini count 0),
+  // so unless the entity owns them, every create/destroy churn leaks one
+  // EventData per event type (int2dds-specific; the reference RMW ties event
+  // data to the entity likewise). Guarded by event_mutex; freed in
+  // rmw_destroy_subscription.
+  std::mutex event_mutex;
+  std::vector<EventData *> events;
 };
 
 /// Guard condition implementation data
@@ -385,6 +403,11 @@ struct EventData
   size_t last_total_count{0};
   size_t last_current_count{0};
 };
+
+// Free an EventData created by rmw_*_event_init. Used by rmw_event_fini
+// and by the entity destroy paths that reclaim events rcl never finalized, so
+// all frees stay accounted in one place.
+void free_event_data(EventData * event_data);
 
 }  // namespace rmw_int2dds_cpp
 
