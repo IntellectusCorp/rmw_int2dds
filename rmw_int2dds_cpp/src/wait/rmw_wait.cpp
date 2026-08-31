@@ -283,8 +283,17 @@ event_is_triggered(const rmw_event_t * event)
     }
 #ifdef RMW_INT2DDS_HAS_MATCHED_EVENT
     if (event_data->event_type == RMW_EVENT_SUBSCRIPTION_MATCHED) {
-      std::lock_guard<std::mutex> lock(sub_data->matched_mutex);
-      return sub_data->matched_changed;
+      {
+        std::lock_guard<std::mutex> lock(sub_data->matched_mutex);
+        if (sub_data->matched_changed) {
+          return true;
+        }
+      }
+      // Fall back to a live status poll: some cores do not invoke the matched
+      // listener, so the cached flag never flips. Reading the reader status
+      // directly still reflects the match.
+      ret = int2dds_datareader_get_status_changes(sub_data->datareader, &status_changes);
+      return ret == INT2DDS_RET_OK && (status_changes & target_mask) != 0;
     }
 #endif
     ret = int2dds_datareader_get_status_changes(sub_data->datareader, &status_changes);
