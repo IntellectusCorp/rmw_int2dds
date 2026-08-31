@@ -1,0 +1,25 @@
+# Distribution-wide dependency cycle check. A cycle here breaks release job
+# generation for the whole distro and is invisible to colcon, which only orders
+# the workspace. See testing/check-dependency-cycle.py.
+#
+# Pinned to this branch's distro (jazzy), like build.yml and lint.yml.
+name: dependency-cycle
+
+on:
+  push:
+    branches: [jazzy]
+  pull_request:
+    branches: [jazzy]
+  workflow_dispatch:
+
+jobs:
+  dependency_cycle:
+    runs-on: ubuntu-24.04
+    # catkin_pkg and PyYAML ship with the image; nothing here needs building.
+    container:
+      image: ros:jazzy-ros-base
+    steps:
+      - uses: actions/checkout@v4
+      # The distro is passed explicitly: a pull request checkout is detached, so
+      # the script cannot read it from the branch name.
+      - run: python3 testing/check-dependency-cycle.py jazzy

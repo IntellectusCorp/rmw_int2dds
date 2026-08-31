@@ -2,8 +2,8 @@
 Changelog for package int2dds_ffi_vendor
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Forthcoming
------------
+0.1.1 (2026-08-28)
+------------------
 * Move the package into the ``rmw_int2dds`` repository, next to
   ``rmw_int2dds_cpp``, so the two are released in lockstep. The prebuilt FFI
   tarballs are still published on the ``int2dds_ffi_vendor`` release page and
