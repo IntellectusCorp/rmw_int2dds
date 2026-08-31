@@ -123,7 +123,7 @@ official ROS 2 repositories (`rmw_implementation`, `system_tests`).
 | `test_security` | 6/6 | 6/6 | 6/6 |
 | In-repo QoS check scripts | 6/6 | 6/6 | 6/6 |
 | `rosdoc2 build` | pass | pass | pass |
-| `ament_lint` suite | 194 tests, 0 failures (55 cppcheck skips) | 194 tests, 0 failures (55 cppcheck skips) | 194 tests, 0 failures (55 cppcheck skips) |
+| `ament_lint` suite | 162 tests, 0 failures, 42 skipped | 162 tests, 0 failures, 42 skipped | 154 tests, 0 failures, 40 skipped |
 
 Cross-vendor scope: the upstream suite skips service/action combinations for
 **all** vendor pairs on every distro, so the cross-vendor rows cover the 8
@@ -141,13 +141,13 @@ verified against the per-test xunit/gtest XML results):
 - Upstream-skipped cases inside otherwise-run suites (6 loaned-message /
   allocator cases in the Lyrical gate, 5 in Jazzy) are counted in ctest's
   headline totals even though they do not run.
-- `ament_lint`: 194 is the ament linter testcase count (the eight linters'
-  combined xunit results); running `colcon test-result --all` prints a higher
-  number only because it also sums the ctest summary file that wraps those same
-  eight linters. Identical linter composition on all three distros (cpplint
-  covers the same 37 C++ files); the 55 skips are ament_cppcheck's performance
-  guard for cppcheck 2.x (set `AMENT_CPPCHECK_ALLOW_SLOW_VERSIONS=1` to run
-  it). The same guard skips the cppcheck entry in `test_security`.
+- `ament_lint`: the count is the eight linters' combined xunit testcase total
+  (162 on Lyrical and Jazzy, 154 on Humble); running `colcon test-result` over
+  the whole build directory prints 8 more (170 / 162) because it also sums the
+  ctest summary file that wraps those same eight linters. The skips (42 on
+  Lyrical and Jazzy, 40 on Humble) are ament_cppcheck's performance guard for
+  cppcheck 2.x (set `AMENT_CPPCHECK_ALLOW_SLOW_VERSIONS=1` to run it). The same
+  guard skips the cppcheck entry in `test_security`.
 
 ## Known issues
 
