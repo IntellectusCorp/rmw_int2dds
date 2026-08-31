@@ -112,10 +112,9 @@ static std::string demangle_dds_service_type_name(const std::string & type_name)
   return demangled;
 }
 
-constexpr std::chrono::milliseconds kGraphSnapshotTimeout{50};
-
-// Departures are polled, not awaited: a read leaves the instance in place, so one that
-// has not arrived yet is picked up on the next pass. Waiting only burned the timeout.
+// Snapshots are polled, not awaited: a read leaves the instance in place, so one that has
+// not arrived yet is picked up on the next pass. Waiting only burned the timeout.
+constexpr std::chrono::milliseconds kGraphSnapshotTimeout{0};
 constexpr std::chrono::milliseconds kDepartureSnapshotTimeout{0};
 
 static bool is_service_request_topic(const std::string & topic_name)
