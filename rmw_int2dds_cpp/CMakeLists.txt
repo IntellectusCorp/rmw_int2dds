@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.14)
+cmake_minimum_required(VERSION 3.20)
 project(rmw_int2dds_cpp)
 
 # C++20: platform minimum since ROS 2 Kilted (REP 2000); Jazzy toolchains accept it too.
@@ -19,6 +19,10 @@ endif()
 
 # Find ROS2 dependencies
 find_package(ament_cmake REQUIRED)
+# The core package, not the ament_cmake_ros umbrella: the umbrella pulls in
+# rmw_test_fixture_implementation and closes a dependency cycle back through
+# rmw_implementation. Has to run before add_library().
+find_package(ament_cmake_ros_core REQUIRED)
 find_package(rcutils REQUIRED)
 find_package(rmw REQUIRED)
 find_package(rosidl_runtime_c REQUIRED)
