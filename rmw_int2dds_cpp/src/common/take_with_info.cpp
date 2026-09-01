@@ -39,6 +39,9 @@ take_one_serialized_with_info(
   Int2DdsSampleSeq * seq = nullptr;
   Int2DdsRet ret = int2dds_datareader_take_serialized_batch(reader, 1, &seq);
   if (ret != INT2DDS_RET_OK) {
+    if (seq != nullptr) {
+      int2dds_sample_seq_delete(seq);
+    }
     return ret;
   }
   if (seq == nullptr || int2dds_sample_seq_length(seq) == 0) {
