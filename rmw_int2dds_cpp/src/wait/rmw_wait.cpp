@@ -15,6 +15,7 @@
 #include <cstring>
 #include <atomic>
 #include <chrono>
+#include <thread>
 #include <cstdio>
 #include <cstdlib>
 #include <vector>
@@ -164,7 +165,7 @@ convert_timeout_to_ns(const rmw_time_t * wait_timeout)
 
 /// Check if a subscription has data available
 bool
-subscription_has_data(const rmw_int2dds_cpp::SubscriptionData * sub_data)
+subscription_has_data(rmw_int2dds_cpp::SubscriptionData * sub_data)
 {
   if (sub_data == nullptr || sub_data->datareader == nullptr) {
     return false;
@@ -172,10 +173,65 @@ subscription_has_data(const rmw_int2dds_cpp::SubscriptionData * sub_data)
   bool has_cached_data = false;
   Int2DdsRet cache_ret = int2dds_datareader_has_data(
     sub_data->datareader, &has_cached_data);
-  if (cache_ret == INT2DDS_RET_OK && has_cached_data) {
+  if (cache_ret != INT2DDS_RET_OK || !has_cached_data) {
+    return false;
+  }
+  if (!sub_data->ignore_local_publications || sub_data->node_data == nullptr) {
     return true;
   }
-  return false;
+  // ignore_local_publications drops same-node samples at take time, not on
+  // reception, so the reader keeps a DATA_AVAILABLE trigger for a local sample
+  // this subscription will discard. That wakes rmw_wait on the local sample, and
+  // a sibling subscription that must receive it can be reported not-ready before
+  // its own copy is cached. Drain the leading local samples here -- they would be
+  // dropped on take anyway: peek each front sample's origin, take-and-drop it only
+  // when it is local, and stop at the first genuinely remote sample (left in the
+  // cache for the application). Draining clears the trigger, so a local-only queue
+  // leaves this subscription not-ready and rmw_wait blocks until real data
+  // arrives. read/take share take_buffer_mutex with rmw_take so the application's
+  // take never interleaves; the lock order (buffer then node) matches rmw_take.
+  constexpr size_t kPeekBufferSize = 64 * 1024;
+  std::lock_guard<std::mutex> buffer_lock(sub_data->take_buffer_mutex);
+  if (sub_data->take_buffer.size() < kPeekBufferSize) {
+    sub_data->take_buffer.resize(kPeekBufferSize);
+  }
+  for (;; ) {
+    uintptr_t peek_size = 0;
+    Int2DdsSampleInfo info;
+    Int2DdsRet read_ret = int2dds_datareader_read_serialized_w_info(
+      sub_data->datareader, sub_data->take_buffer.data(), sub_data->take_buffer.size(),
+      &peek_size, &info);
+    if (read_ret == INT2DDS_RET_NO_DATA) {
+      return false;  // only local samples were queued; all drained
+    }
+    if (read_ret != INT2DDS_RET_OK) {
+      return true;  // cannot inspect (e.g. sample larger than buffer): never hide data
+    }
+    bool local = false;
+    {
+      std::lock_guard<std::mutex> node_lock(sub_data->node_data->entities_mutex);
+      for (const auto & pub_gid : sub_data->node_data->publishers) {
+        if (memcmp(
+            pub_gid.data, info.publication_handle, sizeof(info.publication_handle)) == 0)
+        {
+          local = true;
+          break;
+        }
+      }
+    }
+    if (!local) {
+      return true;  // genuine remote data is pending (not consumed)
+    }
+    uintptr_t take_size = 0;
+    Int2DdsSampleInfo take_info;
+    Int2DdsRet take_ret = int2dds_datareader_take_serialized_w_info(
+      sub_data->datareader, sub_data->take_buffer.data(), sub_data->take_buffer.size(),
+      &take_size, &take_info);
+    if (take_ret != INT2DDS_RET_OK) {
+      return true;  // could not drop the local sample: never hide data
+    }
+    // Loop to inspect the next front sample.
+  }
 }
 
 /// Check if a guard condition is triggered
@@ -916,6 +972,24 @@ rmw_wait(
 
       // Attachments stay in place for the next call; they are only rebuilt
       // when the entity set changes or an entity is destroyed.
+
+      // A wake with nothing genuinely ready happens when an ignore_local
+      // subscription's DATA_AVAILABLE trigger was already latched for a local
+      // sample: the readiness scan drains and rejects that sample, but the wake
+      // itself already returned. Returning here would report a sibling
+      // subscription not-ready before its own copy is cached. Bounded-poll the
+      // readiness scan until something is ready or the caller's timeout elapses.
+      // The scan drains freshly-arrived local samples each pass, so this cannot
+      // spin on a latched trigger, and the hard deadline bounds it absolutely.
+      if (wait_ret == INT2DDS_RET_OK && timeout_ns > 0) {
+        const auto deadline = total_t0 + std::chrono::nanoseconds(timeout_ns);
+        while (!any_entity_ready(subscriptions, guard_conditions, services, clients, events)) {
+          if (std::chrono::steady_clock::now() >= deadline) {
+            break;
+          }
+          std::this_thread::sleep_for(std::chrono::milliseconds(2));
+        }
+      }
     }
   }
 
