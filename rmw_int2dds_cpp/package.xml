@@ -19,12 +19,10 @@
   <author email="int2dds@int2.us">Intellectus Corp.</author>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
-  <buildtool_depend>ament_cmake_ros</buildtool_depend>
 
   <!-- Core RMW interface and shared DDS utilities -->
   <depend>rmw</depend>
   <depend>rmw_dds_common</depend>
-  <depend>rcpputils</depend>
   <depend>rcutils</depend>
   <depend>rosidl_runtime_c</depend>
   <depend>rosidl_runtime_cpp</depend>
@@ -71,7 +69,6 @@
   <test_depend>ament_cmake_flake8</test_depend>
   <test_depend>ament_cmake_test</test_depend>
   <test_depend>ament_cmake_gtest</test_depend>
-  <test_depend>test_msgs</test_depend>
 
   <!-- Mark this package as an RMW implementation so rmw_implementation builds it -->
   <member_of_group>rmw_implementation_packages</member_of_group>
