@@ -793,6 +793,7 @@ rmw_create_subscription(
   sub_data->qos = actual_qos;
   sub_data->gid = rmw_int2dds_cpp::generate_subscription_gid();
   sub_data->node_data = node_data;
+  sub_data->ignore_local_publications = subscription_options->ignore_local_publications;
   sub_data->topic_name = topic_name;
   sub_data->type_name = rmw_int2dds_cpp::get_type_name(introspection_ts);
   std::string dds_type_name = rmw_int2dds_cpp::get_dds_type_name(introspection_ts);

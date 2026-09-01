@@ -217,6 +217,11 @@ struct SubscriptionData
   NodeData * node_data{nullptr};
   std::atomic<uint64_t> reception_sequence{0};
 
+  // Mirror of rmw_subscription_options.ignore_local_publications so rmw_wait can
+  // decide, without the rmw_subscription_t, whether readiness must skip a pending
+  // sample that came from this node's own publisher (see subscription_has_data).
+  bool ignore_local_publications{false};
+
   // Matched-event delivery bridge (see PublisherData::matched_mutex). Populated
   // by the int2dds DataReader listener for SUBSCRIPTION_MATCHED events.
   std::mutex matched_mutex;
