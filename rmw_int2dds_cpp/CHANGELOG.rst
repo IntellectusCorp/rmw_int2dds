@@ -2,6 +2,18 @@
 Changelog for package rmw_int2dds_cpp
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+Forthcoming
+-----------
+* Seed a large UDP socket buffer in ``rmw_init`` so high-rate / large-message
+  RELIABLE traffic no longer drops fragments.
+* Own ``EventData`` in the publisher/subscription entities and free it on
+  destroy, closing a per-event-type leak.
+* Keep discovery reading when a sample outgrows the buffer, so a large discovery
+  sample no longer blocks a participant.
+* Report subscription matched via a cached event.
+* Drop dead ``package.xml`` dependencies.
+* Correct the ``ament_lint`` test-status count in the README.
+
 0.1.1 (2026-08-28)
 ------------------
 * Shrink the initial subscription receive buffer to 64 KiB. It is held per
