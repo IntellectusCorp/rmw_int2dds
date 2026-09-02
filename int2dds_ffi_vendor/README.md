@@ -55,15 +55,15 @@ int2dds-ffi-<version>-linux.tar.gz
 
 ```yaml
 name: int2dds-ffi
-version: 0.1.1
+version: 0.1.3
 artifacts:
   - os: linux
     arch: amd64
     triple: x86_64-unknown-linux-gnu
-    file: linux-x86_64/libint2dds_ffi.so.0.1.1
+    file: linux-x86_64/libint2dds_ffi.so.0.1.3
     soname: libint2dds_ffi.so.0
     sha256: <hex>
-    min_glibc: "2.34"
+    min_glibc: "2.28"
   ...
 ```
 
@@ -78,7 +78,7 @@ verifies integrity automatically — no SHA values need to be hard-coded here.
 ### libc selection
 
 The default is glibc (`gnu`), which is what ROS binaries target (Ubuntu 22.04
-Jammy ships glibc 2.35 ≥ the artifacts' `min_glibc: 2.34`). For a musl host:
+Jammy ships glibc 2.35 ≥ the artifacts' `min_glibc: 2.28`). For a musl host:
 
 ```bash
 colcon build --cmake-args -DINT2DDS_FFI_LIBC=musl
