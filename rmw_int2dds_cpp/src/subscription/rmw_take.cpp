@@ -45,7 +45,7 @@
 
 // Keep the initial receive buffer comfortably above common large-message test sizes.
 // Large payloads can exceed their nominal application size once CDR/framing metadata is included.
-static constexpr size_t DEFAULT_RECEIVE_BUFFER_SIZE = 2 * 1024 * 1024;
+static constexpr size_t DEFAULT_RECEIVE_BUFFER_SIZE = 64 * 1024;
 
 namespace
 {
@@ -573,6 +573,7 @@ rmw_take_sequence(
     return RMW_RET_OK;
   }
   if (ret != INT2DDS_RET_OK) {
+    int2dds_sample_seq_delete(seq);
     RMW_SET_ERROR_MSG("failed to batch-take from DDS");
     return RMW_RET_ERROR;
   }

@@ -122,7 +122,7 @@ static std::string demangle_dds_service_type_name(const std::string & type_name)
   return demangled;
 }
 
-constexpr std::chrono::milliseconds kGraphSnapshotTimeout{50};
+constexpr std::chrono::milliseconds kGraphSnapshotTimeout{0};
 
 static bool is_service_request_topic(const std::string & topic_name)
 {

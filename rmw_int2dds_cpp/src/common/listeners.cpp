@@ -64,6 +64,7 @@ on_sub_matched(
     return;
   }
   std::lock_guard<std::mutex> lock(sub_data->matched_mutex);
+  sub_data->matched_changed = true;
   if (status != nullptr && status->total_count > 0) {
     sub_data->matched_total_seen =
       std::max(sub_data->matched_total_seen, static_cast<size_t>(status->total_count));
