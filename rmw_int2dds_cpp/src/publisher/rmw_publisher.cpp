@@ -717,6 +717,17 @@ rmw_destroy_publisher(rmw_node_t * node, rmw_publisher_t * publisher)
       node->context->options.allocator.state);
   }
 
+  // Reclaim EventData that rcl never finalized (it never calls
+  // rmw_event_fini), which otherwise leaks one object per event type on every
+  // publisher create/destroy churn. The waitset caches were cleaned above.
+  {
+    std::lock_guard<std::mutex> guard(pub_data->event_mutex);
+    for (auto * ev : pub_data->events) {
+      rmw_int2dds_cpp::free_event_data(ev);
+    }
+    pub_data->events.clear();
+  }
+
   delete pub_data;
   rmw_publisher_free(publisher);
 

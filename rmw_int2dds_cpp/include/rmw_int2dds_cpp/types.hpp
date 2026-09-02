@@ -66,6 +66,7 @@ constexpr int32_t INT2DDS_EXTENSIBILITY_MUTABLE = 2;
 // Forward declaration
 struct ServiceData;
 struct ClientData;
+struct EventData;
 
 /// One user event-callback registration (rmw_event_callback_t plus the backlog
 /// of occurrences that fired before the callback was set). Fired from int2dds
@@ -79,6 +80,7 @@ struct CallbackSlot
 };
 
 /// Context implementation data
+struct GraphListenerState;  // off-thread graph-cache applier
 struct ContextData
 {
   Int2DdsParticipantFactory * factory{nullptr};
@@ -114,6 +116,10 @@ struct ContextData
   // remote_sync_mutex.
   std::mutex remote_sync_mutex;
   std::map<std::array<uint8_t, RMW_GID_STORAGE_SIZE>, bool> synced_remote_entities;
+
+  // Off-thread applier that drains SEDP discovery events so the DDS discovery
+  // callback only enqueues (no GraphCache work on the discovery thread).
+  GraphListenerState * graph_listener{nullptr};
 };
 
 /// Create the DDS resources a context needs: participant factory, participant,
@@ -193,6 +199,14 @@ struct PublisherData
   CallbackSlot offered_incompatible_qos_slot;
   CallbackSlot offered_incompatible_type_slot;
   CallbackSlot liveliness_lost_slot;
+
+  // EventData objects created by rmw_publisher_event_init for this
+  // publisher. rcl/rclpy never call rmw_event_fini (measured: fini count 0), so
+  // unless the entity owns them, every create/destroy churn leaks one EventData
+  // per event type (int2dds-specific; the reference RMW ties event data to the
+  // entity likewise). Guarded by event_mutex; freed in rmw_destroy_publisher.
+  std::mutex event_mutex;
+  std::vector<EventData *> events;
 };
 
 /// Subscription implementation data
@@ -215,6 +229,11 @@ struct SubscriptionData
   NodeData * node_data{nullptr};
   std::atomic<uint64_t> reception_sequence{0};
 
+  // Mirror of rmw_subscription_options.ignore_local_publications so rmw_wait can
+  // decide, without the rmw_subscription_t, whether readiness must skip a pending
+  // sample that came from this node's own publisher (see subscription_has_data).
+  bool ignore_local_publications{false};
+
   // Matched-event delivery bridge (see PublisherData::matched_mutex). Populated
   // by the int2dds DataReader listener for SUBSCRIPTION_MATCHED events.
   std::mutex matched_mutex;
@@ -223,6 +242,9 @@ struct SubscriptionData
   size_t matched_unread{0};
   // See PublisherData::matched_total_seen.
   size_t matched_total_seen{0};
+  // RMW-internal matched-change flag (matched_mutex): set by the DataReader
+  // matched listener on every match/unmatch, cleared when the event is taken.
+  bool matched_changed{false};
 
   // Data/status delivery bridge (see CallbackSlot); fed by the combined
   // int2dds DataReader listener registered at creation. new_message_slot backs
@@ -241,6 +263,15 @@ struct SubscriptionData
   // rmw_take and rmw_take_serialized_message may share the same scratch buffer.
   std::mutex take_buffer_mutex;
   std::vector<uint8_t> take_buffer;
+
+  // EventData objects created by rmw_subscription_event_init for this
+  // subscription. rcl/rclpy never call rmw_event_fini (measured: fini count 0),
+  // so unless the entity owns them, every create/destroy churn leaks one
+  // EventData per event type (int2dds-specific; the reference RMW ties event
+  // data to the entity likewise). Guarded by event_mutex; freed in
+  // rmw_destroy_subscription.
+  std::mutex event_mutex;
+  std::vector<EventData *> events;
 };
 
 /// Guard condition implementation data
@@ -377,6 +408,11 @@ struct EventData
   size_t last_total_count{0};
   size_t last_current_count{0};
 };
+
+// Free an EventData created by rmw_*_event_init. Used by rmw_event_fini
+// and by the entity destroy paths that reclaim events rcl never finalized, so
+// all frees stay accounted in one place.
+void free_event_data(EventData * event_data);
 
 }  // namespace rmw_int2dds_cpp
 

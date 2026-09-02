@@ -13,6 +13,13 @@ Changelog for package rmw_int2dds_cpp
 
 0.1.1 (2026-08-28)
 ------------------
+* Seed a large UDP socket buffer in ``rmw_init`` so high-rate / large-message
+  RELIABLE traffic no longer drops fragments.
+* Own ``EventData`` in the publisher/subscription entities and free it on
+  destroy, closing a per-event-type leak.
+* Poll the graph snapshot instead of waiting for it, removing wasted per-query
+  latency.
+* Correct the ``ament_lint`` test-status count in the README.
 * Fix participant/context lifecycle: delete contained entities before the
   participant, release the participant when the last node is destroyed,
   recreate context DDS resources on node creation, and release all context
@@ -84,12 +91,6 @@ Changelog for package rmw_int2dds_cpp
 * Add ``INT2DDS_FFI_TARBALL`` to the vendor package, so a build can consume a
   locally built FFI tarball instead of the published release asset - the release
   tag alone does not identify the ABI.
-* Load the ``ament_cmake_ros`` buildtool dependency the package already declared.
-  Declaring without loading it set neither ``BUILD_SHARED_LIBS`` nor
-  ``ROS_PACKAGE_NAME``.
-* Add ``testing/check-dependency-cycle.py``, which replays the build farm's
-  release job sort over this checkout, next to the container test harness.
-* Run that check in CI on every push and pull request to this branch.
 * Contributors: Intellectus Corp.
 
 0.0.1 (2026-06-25)
