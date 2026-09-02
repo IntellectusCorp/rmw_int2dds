@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <algorithm>
 #include <mutex>
 #include <new>
 
@@ -498,6 +499,19 @@ take_subscription_event(
 
 }  // namespace
 
+// Central EventData deleter, shared by rmw_event_fini and the entity
+// destroy paths, so every EventData is freed through one place.
+namespace rmw_int2dds_cpp
+{
+void free_event_data(EventData * event_data)
+{
+  if (event_data == nullptr) {
+    return;
+  }
+  delete event_data;
+}
+}  // namespace rmw_int2dds_cpp
+
 extern "C"
 {
 rmw_ret_t
@@ -550,6 +564,12 @@ rmw_publisher_event_init(
   event_data->entity_data = pub_data;
   event_data->is_publisher = true;
 
+  // Hand ownership to the publisher so the EventData is freed on
+  // rmw_destroy_publisher even when rcl never calls rmw_event_fini.
+  {
+    std::lock_guard<std::mutex> guard(pub_data->event_mutex);
+    pub_data->events.push_back(event_data);
+  }
 
   rmw_event->implementation_identifier = rmw_int2dds_cpp::implementation_identifier;
   rmw_event->data = event_data;
@@ -608,6 +628,12 @@ rmw_subscription_event_init(
   event_data->entity_data = sub_data;
   event_data->is_publisher = false;
 
+  // Hand ownership to the subscription so the EventData is freed on
+  // rmw_destroy_subscription even when rcl never calls rmw_event_fini.
+  {
+    std::lock_guard<std::mutex> guard(sub_data->event_mutex);
+    sub_data->events.push_back(event_data);
+  }
 
   rmw_event->implementation_identifier = rmw_int2dds_cpp::implementation_identifier;
   rmw_event->data = event_data;
@@ -667,9 +693,25 @@ rmw_event_fini(rmw_event_t * event)
 {
   if (event != nullptr && event->data != nullptr) {
     auto * event_data = static_cast<rmw_int2dds_cpp::EventData *>(event->data);
+    // Detach from the owning entity's tracking list first, so a later
+    // entity destroy will not double-free this EventData. (rcl currently never
+    // calls this path - measured fini count 0 - but stay robust if it does.)
+    if (event_data->entity_data != nullptr) {
+      if (event_data->is_publisher) {
+        auto * pd = static_cast<rmw_int2dds_cpp::PublisherData *>(event_data->entity_data);
+        std::lock_guard<std::mutex> guard(pd->event_mutex);
+        auto & v = pd->events;
+        v.erase(std::remove(v.begin(), v.end(), event_data), v.end());
+      } else {
+        auto * sd = static_cast<rmw_int2dds_cpp::SubscriptionData *>(event_data->entity_data);
+        std::lock_guard<std::mutex> guard(sd->event_mutex);
+        auto & v = sd->events;
+        v.erase(std::remove(v.begin(), v.end(), event_data), v.end());
+      }
+    }
     // The EventData pointer is a wait set cache key (cached_events).
     rmw_int2dds_cpp::waitset_registry_clean_caches();
-    delete event_data;
+    rmw_int2dds_cpp::free_event_data(event_data);
     event->data = nullptr;
   }
   return RMW_RET_OK;
