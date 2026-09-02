@@ -2,6 +2,15 @@
 Changelog for package rmw_int2dds_cpp
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+0.1.3 (2026-09-02)
+------------------
+* Build against int2DDS FFI 0.1.3, up from 0.1.1. Every FFI entry point this
+  package calls kept its signature; 0.1.3 only adds new ones (filtered
+  discovery snapshots, an endpoint discovery callback, and a writer data
+  representation query).
+* No other source changes.
+* Contributors: Intellectus Corp.
+
 0.1.1 (2026-08-28)
 ------------------
 * Fix participant/context lifecycle: delete contained entities before the
