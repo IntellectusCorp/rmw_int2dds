@@ -2,8 +2,12 @@
 Changelog for package rmw_int2dds_cpp
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Forthcoming
------------
+0.1.3 (2026-09-02)
+------------------
+* Build against int2DDS FFI 0.1.3, up from 0.1.1. Every FFI entry point this
+  package calls kept its signature; 0.1.3 only adds new ones (filtered
+  discovery snapshots, an endpoint discovery callback, and a writer data
+  representation query).
 * Seed a large UDP socket buffer in ``rmw_init`` so high-rate / large-message
   RELIABLE traffic no longer drops fragments.
 * Own ``EventData`` in the publisher/subscription entities and free it on
@@ -13,6 +17,12 @@ Forthcoming
 * Report subscription matched via a cached event.
 * Drop dead ``package.xml`` dependencies.
 * Correct the ``ament_lint`` test-status count in the README.
+* Poll the graph snapshot instead of waiting for it. ``kGraphSnapshotTimeout``
+  drops to 0: a read leaves the instance in place, so an endpoint that has not
+  arrived yet is picked up on the next pass and the 50 ms wait only burned the
+  timeout.
+* Honor ``ignore_local_publications`` in subscription readiness.
+* Contributors: Intellectus Corp.
 
 0.1.1 (2026-08-28)
 ------------------
