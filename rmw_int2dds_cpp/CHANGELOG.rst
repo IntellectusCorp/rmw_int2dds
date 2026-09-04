@@ -2,6 +2,13 @@
 Changelog for package rmw_int2dds_cpp
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+0.1.4 (2026-09-04)
+------------------
+* Build against int2DDS FFI 0.1.4, up from 0.1.3. The FFI declarations are
+  identical, so no call site changed.
+* No other source changes.
+* Contributors: Intellectus Corp.
+
 0.1.3 (2026-09-02)
 ------------------
 * Build against int2DDS FFI 0.1.3, up from 0.1.1. Every FFI entry point this
