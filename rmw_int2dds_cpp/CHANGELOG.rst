@@ -2,6 +2,14 @@
 Changelog for package rmw_int2dds_cpp
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+0.1.6 (2026-09-22)
+------------------
+* Build against int2DDS FFI 0.1.6, up from 0.1.5.
+* Seed the graph cache with the discovered endpoints once, at bootstrap. A graph
+  query no longer pulls the full endpoint snapshot on every call and only prunes
+  endpoints that have departed.
+* Contributors: Intellectus Corp.
+
 0.1.5 (2026-09-10)
 ------------------
 * Build against int2DDS FFI 0.1.5, up from 0.1.4.
