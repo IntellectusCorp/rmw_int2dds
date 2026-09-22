@@ -349,7 +349,7 @@ rmw_init(const rmw_init_options_t * options, rmw_context_t * context)
   // default to the ROS/RMW path without changing the core's own default (65000).
   // overwrite=0 preserves any user-provided value.
   setenv("INT2DDS_DATA_FRAG_SIZE", "1344", 0);
-  setenv("INT2DDS_MAX_MESSAGE_SIZE", "13440", 0);
+  setenv("INT2DDS_MAX_MESSAGE_SIZE", "1344", 0);
   // Seed a large UDP socket buffer for the ROS/RMW path. The core's
   // default is small, so under high-rate / large-message reliable traffic the
   // kernel receive buffer overflows and drops fragments, which surfaces as lost
