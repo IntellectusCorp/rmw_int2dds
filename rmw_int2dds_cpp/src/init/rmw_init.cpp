@@ -357,6 +357,11 @@ rmw_init(const rmw_init_options_t * options, rmw_context_t * context)
   // NOTE: the kernel caps this at net.core.rmem_max/wmem_max, so deployments
   // must also raise those (standard DDS requirement) for the full effect.
   setenv("INT2DDS_UDP_SOCKET_BUFFER", "8388608", 0);
+  // Size each direction on its own, which the core takes over the both-directions
+  // value above: the ROS/RMW path receives far more than it sends, so the send
+  // buffer does not need the same size. overwrite=0 preserves a user-provided value.
+  setenv("INT2DDS_UDP_SEND_BUFFER", "262144", 0);
+  setenv("INT2DDS_UDP_RECV_BUFFER", "16777216", 0);
   // Create context data
   auto * context_data = new (std::nothrow) rmw_int2dds_cpp::ContextData();
   if (context_data == nullptr) {
