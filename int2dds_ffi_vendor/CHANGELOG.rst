@@ -2,6 +2,16 @@
 Changelog for package int2dds_ffi_vendor
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+0.1.6 (2026-09-22)
+------------------
+* Vendor the int2DDS FFI 0.1.6 release assets in place of 0.1.5. The libraries
+  are a fresh build, so the sha256 of every artifact moved.
+* The soname is unchanged at ``libint2dds_ffi.so.0``.
+* Extract the FFI tarball with ``cmake -E tar`` instead of
+  ``file(ARCHIVE_EXTRACT)``, which needs CMake 3.18. Foxy targets Ubuntu 20.04,
+  whose CMake is 3.16.
+* Contributors: Intellectus Corp.
+
 0.1.5 (2026-09-10)
 ------------------
 * Vendor the int2DDS FFI 0.1.5 release assets in place of 0.1.4. The libraries
