@@ -2,6 +2,21 @@
 Changelog for package rmw_int2dds_cpp
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+0.1.6 (2026-09-22)
+------------------
+* Port to ROS 2 Foxy. The rmw entry points that arrived after Foxy are not
+  provided on this branch: content filtered topics, the ``*_set_on_new_*``
+  callbacks and ``rmw_event_set_callback``, network flow endpoints,
+  ``rmw_publisher_wait_for_all_acked``, ``rmw_qos_profile_check_compatible``,
+  ``rmw_feature_supported`` and the service/client ``*_get_actual_qos`` calls.
+* Add ``foxy_compat.hpp`` for the ``RMW_DURATION_*`` values and the event
+  callback type that Foxy's rmw headers lack.
+* Build against int2DDS FFI 0.1.6, up from 0.1.5.
+* Seed the graph cache with the discovered endpoints once, at bootstrap. A graph
+  query no longer pulls the full endpoint snapshot on every call and only prunes
+  endpoints that have departed.
+* Contributors: Intellectus Corp.
+
 0.1.5 (2026-09-10)
 ------------------
 * Build against int2DDS FFI 0.1.5, up from 0.1.4.
