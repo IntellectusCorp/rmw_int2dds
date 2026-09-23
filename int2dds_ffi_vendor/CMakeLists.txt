@@ -60,6 +60,13 @@ else()
   set(_asset "int2dds-ffi-${INT2DDS_FFI_VERSION}-linux.tar.gz")
 endif()
 
+# The ACM branch carries its own FFI build in int2dds_ffi_vendor/local, so the
+# build needs no network. An explicit -DINT2DDS_FFI_TARBALL still wins, and the
+# release download is used again as soon as that file is gone.
+if(NOT INT2DDS_FFI_TARBALL AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/local/${_asset}")
+  set(INT2DDS_FFI_TARBALL "${CMAKE_CURRENT_SOURCE_DIR}/local/${_asset}")
+endif()
+
 # ----------------------------------------------------------------------------
 # Detect architecture -> in-tarball subdirectory token
 # ----------------------------------------------------------------------------

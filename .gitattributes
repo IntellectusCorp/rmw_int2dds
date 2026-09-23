@@ -25,5 +25,6 @@
 *.dll   binary
 *.lib   binary
 *.dylib binary
+*.tar.gz binary
 *.png   binary
 *.jpg   binary
