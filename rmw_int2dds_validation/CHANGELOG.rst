@@ -2,6 +2,11 @@
 Changelog for package rmw_int2dds_validation
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+0.1.7 (2026-09-23)
+------------------
+* No source changes; released in lockstep with ``rmw_int2dds_cpp``.
+* Contributors: Intellectus Corp.
+
 0.1.6 (2026-09-22)
 ------------------
 * No source changes; released in lockstep with ``rmw_int2dds_cpp``.
