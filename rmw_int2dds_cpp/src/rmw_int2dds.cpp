@@ -18,6 +18,7 @@
 #include "rmw/error_handling.h"
 #include "rmw/features.h"
 
+#include "rcutils/env.h"
 #include "rcutils/logging.h"
 
 #include "rmw_int2dds_cpp/identifier.hpp"
@@ -83,11 +84,13 @@ rmw_set_log_severity(rmw_log_severity_t severity)
 
   // int2dds configures its Rust logger from env vars during initialization.
   // Keep the requested severity in sync for future contexts and subprocesses.
-  if (setenv("INT2DDS_CONSOLE_LOG_LEVEL", level, 1) != 0) {
+  if (!rcutils_set_env("INT2DDS_CONSOLE_LOG_LEVEL", level)) {
+    rcutils_reset_error();
     RMW_SET_ERROR_MSG("failed to set INT2DDS_CONSOLE_LOG_LEVEL");
     return RMW_RET_ERROR;
   }
-  if (setenv("INT2DDS_FILE_LOG_LEVEL", level, 1) != 0) {
+  if (!rcutils_set_env("INT2DDS_FILE_LOG_LEVEL", level)) {
+    rcutils_reset_error();
     RMW_SET_ERROR_MSG("failed to set INT2DDS_FILE_LOG_LEVEL");
     return RMW_RET_ERROR;
   }
