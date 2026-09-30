@@ -36,6 +36,33 @@ int2DDS as its middleware via `RMW_IMPLEMENTATION=rmw_int2dds_cpp`.
 - Windows, macOS: not supported. The `int2dds_ffi_vendor` releases carry Linux only.
 - arm32: not supported. ROS 2 publishes no arm32 binaries.
 
+## Installation
+
+### From the ROS 2 apt repository
+
+Rolling packages are published to the ROS 2 testing repository only; see the next
+section.
+
+Supported: **humble / jazzy / lyrical / rolling** × **amd64 / arm64**.
+
+### Latest version (testing repository or source build)
+
+The newest release is available from the ROS 2 testing repository:
+
+```bash
+sudo apt install -y ros2-testing-apt-source
+sudo apt update
+sudo apt install ros-rolling-rmw-int2dds-cpp
+source /opt/ros/rolling/setup.bash
+export RMW_IMPLEMENTATION=rmw_int2dds_cpp
+ros2 run demo_nodes_cpp talker
+```
+
+To build from source instead, follow [Quick Start](#quick-start).
+
+To build the Debian packages yourself: `packaging/build-deb.sh <distro> <arch>` (needs
+Docker; see `packaging/` for the build and verification scripts).
+
 ## Quick Start
 
 ```bash
@@ -74,33 +101,6 @@ against the `sha256` recorded in the bundled manifest, and exports the
 Building therefore needs outbound network access to `github.com`. The FFI
 version is pinned in one place: `INT2DDS_FFI_VERSION` in
 [int2dds_ffi_vendor/CMakeLists.txt](int2dds_ffi_vendor/CMakeLists.txt).
-
-## Installation
-
-### From the ROS 2 apt repository
-
-Rolling packages are published to the ROS 2 testing repository only; see the next
-section.
-
-Supported: **humble / jazzy / lyrical / rolling** × **amd64 / arm64**.
-
-### Latest version (testing repository or source build)
-
-The newest release is available from the ROS 2 testing repository:
-
-```bash
-sudo apt install -y ros2-testing-apt-source
-sudo apt update
-sudo apt install ros-rolling-rmw-int2dds-cpp
-source /opt/ros/rolling/setup.bash
-export RMW_IMPLEMENTATION=rmw_int2dds_cpp
-ros2 run demo_nodes_cpp talker
-```
-
-To build from source instead, follow [Quick Start](#quick-start).
-
-To build the Debian packages yourself: `packaging/build-deb.sh <distro> <arch>` (needs
-Docker; see `packaging/` for the build and verification scripts).
 
 ## Running examples
 
