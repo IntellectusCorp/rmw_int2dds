@@ -166,6 +166,7 @@ target_include_directories(rmw_int2dds_cpp PUBLIC
 
 target_link_libraries(rmw_int2dds_cpp
   int2dds_ffi::int2dds_ffi
+  rmw_dds_common::rmw_dds_common_library
   rosidl_dynamic_typesupport::rosidl_dynamic_typesupport
   ${PLATFORM_LIBS}
 )
@@ -179,7 +180,6 @@ ament_target_dependencies(rmw_int2dds_cpp
   rosidl_typesupport_introspection_cpp
   rosidl_typesupport_c
   rosidl_typesupport_cpp
-  rmw_dds_common
 )
 
 # Configure as RMW library
