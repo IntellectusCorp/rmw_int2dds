@@ -32,26 +32,10 @@ int2DDS as its middleware via `RMW_IMPLEMENTATION=rmw_int2dds_cpp`.
 
 | Platform | amd64 | arm64 |
 |----------|-------|-------|
-| Ubuntu 20.04 (Focal) | Verified (see Test status) | `.deb` build; install and RMW load checked in CI |
+| Ubuntu 20.04 (Focal) | Verified | Verified |
 
-- **Windows, macOS**: not available yet. int2DDS itself is built for both, but the
-  `int2dds_ffi_vendor` releases that the build downloads carry Linux only, so the
-  build stops at configure.
-- **arm32**: not packaged or tested. ROS 2 publishes no arm32 binaries or container
-  images.
-- Other platforms that the ROS 2 Foxy release targets ([Foxy release notes](https://docs.ros.org/en/humble/Releases/Release-Foxy-Fitzroy.html)) are not built or tested here.
-
-In the same form as the upstream middleware support table:
-
-| Middleware Library | Middleware Provider | Support Level | Platforms | Architectures |
-|---|---|---|---|---|
-| `rmw_int2dds_cpp` | Intellectus int2DDS | Not listed upstream | Ubuntu (`.deb` built with `packaging/build-deb.sh`) | amd64, arm64 |
-
-ROS 2 defines a platform as the combination of the OS, the architecture, and the RMW
-implementation. The upstream
-[platform support tiers](https://docs.ros.org/en/humble/The-ROS2-Project/Platform-Support-Tiers.html)
-describe the ROS 2 core with the RMW implementations listed upstream, and
-`rmw_int2dds_cpp` is not in that list yet, so no upstream tier is claimed for it here.
+- Windows, macOS: not supported. The `int2dds_ffi_vendor` releases carry Linux only.
+- arm32: not supported. ROS 2 publishes no arm32 binaries.
 
 ## Quick Start
 
@@ -101,11 +85,6 @@ See `packaging/` for the build and verification scripts.
 
 ## Running examples
 
-The examples use `demo_nodes_cpp` and `demo_nodes_py`, which ship with
-`ros-foxy-desktop`. On a `ros-foxy-ros-base` install, add them with
-`sudo apt install ros-foxy-demo-nodes-cpp ros-foxy-demo-nodes-py`. Source
-`/opt/ros/foxy/setup.bash` (and your workspace, for a source build) in every terminal.
-
 ```bash
 # C++ (rclcpp)
 RMW_IMPLEMENTATION=rmw_int2dds_cpp ros2 run demo_nodes_cpp talker
@@ -135,9 +114,6 @@ RMW_IMPLEMENTATION=rmw_int2dds_cpp ros2 run demo_nodes_cpp talker
 RMW_IMPLEMENTATION=rmw_int2dds_cpp ros2 run demo_nodes_cpp listener_best_effort
 ```
 
-Run each command in its own terminal. See also
-[rmw_int2dds_cpp/examples/](rmw_int2dds_cpp/examples/).
-
 ## Repository layout
 
 This repository holds three ROS 2 packages:
@@ -146,7 +122,7 @@ This repository holds three ROS 2 packages:
 |---------|------|
 | [`rmw_int2dds_cpp/`](rmw_int2dds_cpp/) | The RMW implementation itself |
 | [`int2dds_ffi_vendor/`](int2dds_ffi_vendor/) | Fetches the prebuilt int2DDS FFI library and exports it to CMake |
-| [`rmw_int2dds_validation/`](rmw_int2dds_validation/) | Validation probes, including the in-repo QoS check scripts in Test status |
+| [`rmw_int2dds_validation/`](rmw_int2dds_validation/) | In-repo validation scripts |
 
 ## Middleware library dependency
 
@@ -168,11 +144,6 @@ version is pinned in one place: `INT2DDS_FFI_VERSION` in
 All results below were produced by running the listed suites directly.
 Same-vendor and cross-vendor integration tests use the official ROS 2
 repositories (`rmw_implementation`, `system_tests`).
-
-The Rolling, Lyrical, Jazzy and Humble columns were measured on 2026-09-29 against
-the 0.1.7 sources on Ubuntu 26.04 (Rolling, Lyrical), 24.04 (Jazzy) and 22.04
-(Humble), x86_64. Humble `rosdoc2 build` is carried over from the previous run.
-The Foxy column is carried over from the previous run.
 
 | Suite | Rolling | Lyrical | Jazzy | Humble | Foxy |
 |---|---|---|---|---|---|
@@ -204,11 +175,9 @@ verified against the per-test xunit/gtest XML results):
   scripts.
 - `test_rclcpp`: 25 (23 on Foxy) is the actually-run count; the raw
   ctest entry count also includes upstream-skipped cross-RMW `node_name`
-  variants, two per additional RMW implementation in the build, so it varies by
-  environment.
-- Upstream-skipped cases inside otherwise-run suites (6 in the Rolling and
-  Lyrical gates: 4 loaned-message and 2 allocator cases; 5 in the Jazzy and
-  Humble gates: 4 loaned-message cases and `rmw_get_serialized_message_size`) are counted in ctest's
+  variants, so it varies by environment.
+- Upstream-skipped cases inside otherwise-run suites (6 loaned-message /
+  allocator cases in the Rolling and Lyrical gates, 5 in Jazzy and Humble) are counted in ctest's
   headline totals even though they do not run.
 - `ament_lint`: the count is the eight linters' combined xunit testcase total
   (162 on Rolling, Lyrical and Jazzy, 154 on Humble and Foxy); running `colcon test-result`
@@ -223,12 +192,8 @@ verified against the per-test xunit/gtest XML results):
 
 ## Known issues
 
-- `spin_all_fail_wait_set_clear`: a test in the upstream `rclcpp` package's own
-  unit tests (`rclcpp/test/rclcpp/test_executor.cpp`), not in the `test_rclcpp`
-  suite above and not an RMW conformance-gate test. It patches
-  `rcl_wait_set_clear` to return an error and expects `spin_all` to raise within
-  a 1 ms window. Tracked as a known limitation on Jazzy, Lyrical and Rolling;
-  the test does not exist on Humble or Foxy.
+- `spin_all_fail_wait_set_clear` (upstream `rclcpp` unit test, not part of the
+  `test_rclcpp` suite above; not present on Humble or Foxy): tracked as a known limitation.
 - DDS-Security (SROS 2) is not supported yet (see `doc/security.rst`).
 - Rolling and Lyrical cross-vendor vs `rmw_cyclonedds_cpp`: the `WStrings` message type is
   not interoperable in either direction. This is a vendor-level wstring
@@ -256,7 +221,6 @@ verified against the per-test xunit/gtest XML results):
   [Humble](https://docs.ros.org/en/humble/p/rmw_int2dds_cpp/) ·
   [Jazzy](https://docs.ros.org/en/jazzy/p/rmw_int2dds_cpp/) ·
   [Rolling](https://docs.ros.org/en/rolling/p/rmw_int2dds_cpp/)
-  (Lyrical is not yet available on docs.ros.org; Foxy is not published there)
 
 ## Contributing
 
