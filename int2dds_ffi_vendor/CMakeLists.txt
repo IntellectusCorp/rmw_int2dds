@@ -152,14 +152,18 @@ endif()
 # Normalise into the package install prefix: include/ + lib/
 # ----------------------------------------------------------------------------
 install(FILES "${_header}" DESTINATION "include")
-file(GLOB _libfiles "${_extract_dir}/${_subdir}/libint2dds_ffi.so*")
-install(FILES ${_libfiles} DESTINATION "lib")
 if(WIN32)
-  # On Windows also install the import library next to the runtime DLL.
+  # The DLL goes to bin/ (found through PATH at run time), the import library to lib/.
+  install(FILES "${_lib}" DESTINATION "bin")
   set(_implib "${_extract_dir}/${_subdir}/int2dds_ffi.lib")
   if(EXISTS "${_implib}")
     install(FILES "${_implib}" DESTINATION "lib")
   endif()
+elseif(APPLE)
+  install(FILES "${_lib}" DESTINATION "lib")
+else()
+  file(GLOB _libfiles "${_extract_dir}/${_subdir}/libint2dds_ffi.so*")
+  install(FILES ${_libfiles} DESTINATION "lib")
 endif()
 
 ament_export_include_directories(include)
