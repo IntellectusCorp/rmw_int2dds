@@ -15,7 +15,7 @@ set(_int2dds_ffi_libdir  "${_int2dds_ffi_prefix}/lib")
 
 if(WIN32)
   set(_int2dds_ffi_implib  "${_int2dds_ffi_libdir}/int2dds_ffi.lib")
-  set(_int2dds_ffi_runtime "${_int2dds_ffi_libdir}/int2dds_ffi.dll")
+  set(_int2dds_ffi_runtime "${_int2dds_ffi_prefix}/bin/int2dds_ffi.dll")
 elseif(APPLE)
   set(_int2dds_ffi_lib "${_int2dds_ffi_libdir}/libint2dds_ffi.dylib")
 else()
