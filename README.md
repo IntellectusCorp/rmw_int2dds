@@ -95,6 +95,15 @@ ros2 run demo_nodes_cpp talker
 ros2 run demo_nodes_cpp listener
 ```
 
+On RHEL 10, install the ament lint tools and GoogleTest before step 2:
+
+```bash
+sudo dnf install ros-lyrical-ament-flake8 ros-lyrical-ament-cpplint ros-lyrical-ament-copyright \
+  ros-lyrical-ament-cppcheck ros-lyrical-ament-lint-cmake ros-lyrical-ament-uncrustify \
+  ros-lyrical-ament-xmllint ros-lyrical-ament-pep257 ros-lyrical-ament-mypy \
+  ros-lyrical-ament-pycodestyle gtest-devel gmock-devel
+```
+
 ## Middleware library dependency
 
 This package links against the **int2DDS FFI library** (`libint2dds_ffi.so*`
