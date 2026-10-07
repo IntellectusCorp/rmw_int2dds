@@ -2,6 +2,11 @@
 Changelog for package rmw_int2dds_cpp
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+0.1.8 (2026-10-07)
+------------------
+* Build against int2DDS FFI 0.1.8, up from 0.1.7.
+* Contributors: Intellectus Corp.
+
 0.1.7 (2026-09-23)
 ------------------
 * Build against int2DDS FFI 0.1.7, up from 0.1.6.
