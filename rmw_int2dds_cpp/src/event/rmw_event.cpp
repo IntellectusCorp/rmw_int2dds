@@ -687,8 +687,8 @@ rmw_take_event(
 
   // rmw events are level-triggered status reads: rmw_take_event always
   // reports taken=true with the current status snapshot (even when nothing
-  // changed since the last take), matching the reference RMW behavior that
-  // rclcpp::EventHandler::execute and rcl_take_event rely on.
+  // changed since the last take), which rclcpp::EventHandler::execute and
+  // rcl_take_event rely on.
   if (event_data->entity_data == nullptr) {
     RMW_SET_ERROR_MSG("event entity data is null");
     return RMW_RET_ERROR;
