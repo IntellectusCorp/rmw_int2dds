@@ -22,6 +22,5 @@ project for full license details (most are Apache-2.0 or BSD).
 - `rosidl_runtime_c`, `rosidl_runtime_cpp`
 - `rosidl_typesupport_introspection_c`, `rosidl_typesupport_introspection_cpp`
 - `rcpputils`, `rcutils`
-- `rosidl_typesupport_fastrtps_c`, `rosidl_typesupport_fastrtps_cpp` (if used)
 
 > An up-to-date dependency list is declared in `package.xml`.

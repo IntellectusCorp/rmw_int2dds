@@ -241,12 +241,11 @@ void CdrSerializer::serialize_string(const rosidl_runtime_c__String & value)
   append_byte(0);
 }
 
-// Wire format note: unlike narrow strings, ROS 2's reference RMW (rmw_fastrtps,
-// fastcdr XCDR1) serializes wstring as: uint32 length = number of characters
-// (NO null terminator counted), then each character as a 4-byte unsigned value,
-// with no trailing null. Verified against an rmw_fastrtps byte dump; the
-// previous null-terminated 2-byte-per-char encoding broke cross-vendor
-// (int2dds<->fastrtps) WStrings pub/sub while remaining self-consistent.
+// Wire format note: unlike narrow strings, wstring is serialized as: uint32
+// length = number of characters (NO null terminator counted), then each
+// character as a 4-byte unsigned value, with no trailing null. The previous
+// null-terminated 2-byte-per-char encoding was self-consistent but did not
+// interoperate on WStrings.
 void CdrSerializer::serialize_wstring(const std::u16string & value)
 {
   serialize_uint32(static_cast<uint32_t>(value.size()));

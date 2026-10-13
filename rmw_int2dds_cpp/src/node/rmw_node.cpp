@@ -279,7 +279,6 @@ rmw_create_node(
   // Bring the DDS resources back if rmw_destroy_node released them when the last
   // node went away. Without this the context would be usable only once, which is
   // how rclcpp exercises it: one context, nodes created and destroyed repeatedly.
-  // rmw_fastrtps does the same from increment_context_impl_ref_count().
   {
     std::lock_guard<std::mutex> lock(context_data->mutex);
     if (context_data->participant == nullptr) {
@@ -467,11 +466,9 @@ rmw_destroy_node(rmw_node_t * node)
   // participant's sockets, eventfds and epoll instances.
   //
   // rmw_create_node brings the resources back when a node is created on a
-  // context that has none, so a context stays reusable. This mirrors
-  // rmw_fastrtps, where decrement_context_impl_ref_count() and
-  // increment_context_impl_ref_count() are symmetric. Releasing without that
-  // symmetric path left the context permanently unusable and broke every
-  // rclcpp test that recreates nodes on one context.
+  // context that has none, so a context stays reusable. Releasing without
+  // that re-acquire path left the context permanently unusable and broke
+  // every rclcpp test that recreates nodes on one context.
   if (node_data->context_data != nullptr) {
     auto * ctx = node_data->context_data;
     std::lock_guard<std::mutex> lock(ctx->mutex);
