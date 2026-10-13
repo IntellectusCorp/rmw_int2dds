@@ -211,11 +211,10 @@ set_reader_history(Int2DdsDataReaderQos * reader_qos, const rmw_qos_profile_t & 
 
 // Reliability and durability used to be pinned to RELIABLE/VOLATILE here, which
 // dropped whatever the caller asked for. Two endpoints therefore always matched,
-// even when their profiles were incompatible under the DDS request/offer rules --
-// rmw_fastrtps_cpp and rmw_cyclonedds_cpp both refuse the match in that case, so a
-// service that only worked on this RMW would break on any other one. Map the
-// requested policies the same way rmw_create_publisher and rmw_create_subscription
-// already do; system-default values are resolved beforehand by resolve_actual_qos.
+// even when their profiles were incompatible under the DDS request/offer rules,
+// which refuse the match in that case. Map the requested policies the same way
+// rmw_create_publisher and rmw_create_subscription already do; system-default
+// values are resolved beforehand by resolve_actual_qos.
 void
 set_writer_reliability_durability(
   Int2DdsDataWriterQos * writer_qos, const rmw_qos_profile_t & qos)

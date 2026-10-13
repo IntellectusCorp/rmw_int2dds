@@ -931,7 +931,7 @@ dd_get_char(
 // 1-byte buffer to learn the length, then allocate exactly and read. A genuine
 // decode/field failure leaves needed at 0; a too-small buffer sets needed to the real
 // length (> 0) and returns DYNAMIC_DECODE_ERROR. The returned buffer is owned by the
-// caller, matching the fastrtps reference (new char[]).
+// caller and allocated with new char[].
 rcutils_ret_t
 dd_get_string(
   rosidl_dynamic_typesupport_serialization_support_impl_t * ss,
