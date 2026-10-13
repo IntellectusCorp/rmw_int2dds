@@ -73,9 +73,8 @@ The vendor package checks that `dist:` matches the archive it selected and that
 ### libc selection
 
 The default is glibc (`gnu`), which is what ROS binaries target. Each gnu
-archive's `manifest.txt` names the oldest glibc it runs on (`min_glibc`); for
-0.1.8 that is 2.28 for `linux-x86_64` and `linux-aarch64` and 2.34 for
-`linux-armhf`. For a musl host:
+archive's `manifest.txt` names the oldest glibc it runs on (`min_glibc`). For a
+musl host:
 
 ```bash
 colcon build --cmake-args -DINT2DDS_FFI_LIBC=musl
