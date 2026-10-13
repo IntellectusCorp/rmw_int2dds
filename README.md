@@ -64,8 +64,6 @@ To build from source instead, follow [Quick Start](#quick-start).
 ```bash
 # 1) Get the sources into your ROS 2 workspace
 mkdir -p ~/ros2_ws/src && cd ~/ros2_ws/src
-# This repository carries every package you need: rmw_int2dds_cpp, its
-# int2dds_ffi_vendor dependency, and the rmw_int2dds_validation probes.
 git clone -b rolling https://github.com/IntellectusCorp/rmw_int2dds.git
 
 # 2) Build
@@ -83,27 +81,9 @@ ros2 run demo_nodes_cpp talker
 ros2 run demo_nodes_cpp listener
 ```
 
-## Middleware library dependency
-
-This package links against the **int2DDS FFI library** (`libint2dds_ffi.so*`
-and `int2dds-ffi.h`), which is provided by the `int2dds_ffi_vendor` package in
-this repository. At CMake configure time the vendor package downloads the
-archive for the host OS, architecture and libc from the
-[int2DDS releases](https://github.com/IntellectusCorp/int2DDS/releases),
-verifies the library against the `sha256` recorded in the archive's manifest,
-and exports the `int2dds_ffi::int2dds_ffi` CMake target used by this RMW package.
-
-Building therefore needs outbound network access to `github.com`. The FFI
-version is pinned in one place: `INT2DDS_FFI_VERSION` in
-[int2dds_ffi_vendor/CMakeLists.txt](int2dds_ffi_vendor/CMakeLists.txt).
-
 ## Running examples
 
 ```bash
-# C++ (rclcpp)
-RMW_IMPLEMENTATION=rmw_int2dds_cpp ros2 run demo_nodes_cpp talker
-RMW_IMPLEMENTATION=rmw_int2dds_cpp ros2 run demo_nodes_cpp listener
-
 # Python (rclpy)
 RMW_IMPLEMENTATION=rmw_int2dds_cpp ros2 run demo_nodes_py talker
 RMW_IMPLEMENTATION=rmw_int2dds_cpp ros2 run demo_nodes_py listener
@@ -123,6 +103,30 @@ RMW_IMPLEMENTATION=rmw_int2dds_cpp ros2 run demo_nodes_cpp add_two_ints_client
 RMW_IMPLEMENTATION=rmw_int2dds_cpp ros2 run demo_nodes_cpp talker
 RMW_IMPLEMENTATION=rmw_int2dds_cpp ros2 run demo_nodes_cpp listener_best_effort
 ```
+
+## Repository layout
+
+This repository holds three ROS 2 packages:
+
+| Package | Role |
+|---------|------|
+| [`rmw_int2dds_cpp/`](rmw_int2dds_cpp/) | The RMW implementation itself |
+| [`int2dds_ffi_vendor/`](int2dds_ffi_vendor/) | Fetches the prebuilt int2DDS FFI library and exports it to CMake |
+| [`rmw_int2dds_validation/`](rmw_int2dds_validation/) | In-repo validation scripts |
+
+## Middleware library dependency
+
+This package links against the **int2DDS FFI library** (`libint2dds_ffi.so*`
+and `int2dds-ffi.h`), which is provided by the `int2dds_ffi_vendor` package in
+this repository. At CMake configure time the vendor package downloads the
+archive for the host OS, architecture and libc from the
+[int2DDS releases](https://github.com/IntellectusCorp/int2DDS/releases),
+verifies the library against the `sha256` recorded in the archive's manifest,
+and exports the `int2dds_ffi::int2dds_ffi` CMake target used by this RMW package.
+
+Building therefore needs outbound network access to `github.com`. The FFI
+version is pinned in one place: `INT2DDS_FFI_VERSION` in
+[int2dds_ffi_vendor/CMakeLists.txt](int2dds_ffi_vendor/CMakeLists.txt).
 
 ## Test status
 
@@ -170,6 +174,7 @@ Notes:
 - API documentation:
   [Humble](https://docs.ros.org/en/humble/p/rmw_int2dds_cpp/) ·
   [Jazzy](https://docs.ros.org/en/jazzy/p/rmw_int2dds_cpp/) ·
+  [Lyrical](https://docs.ros.org/en/lyrical/p/rmw_int2dds_cpp/) ·
   [Rolling](https://docs.ros.org/en/rolling/p/rmw_int2dds_cpp/)
 
 ## Contributing
