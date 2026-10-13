@@ -46,6 +46,4 @@ Verification evidence (2026-06-11, Humble)
   durability late-joiner, history/depth drain, lifespan expiry,
   liveliness AUTOMATIC and MANUAL_BY_TOPIC — all OK.
 * QoS *compatibility* rules: ``rmw_qos_profile_check_compatible`` delegates to
-  ``rmw_dds_common`` where available, and cross-vendor pub/sub interop with
-  rmw_fastrtps_cpp and rmw_cyclonedds_cpp passes 8/8 each, which exercises
-  reliability/durability/liveliness compatibility on the wire.
+  ``rmw_dds_common`` where available.
