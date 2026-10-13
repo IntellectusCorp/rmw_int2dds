@@ -6,46 +6,51 @@ find_package(ament_cmake REQUIRED)
 # ============================================================================
 # Prebuilt artifact configuration
 #
-#   int2DDS publishes one tarball per OS on GitHub Releases. Each tarball
-#   bundles every architecture for that OS plus a manifest:
+#   The int2DDS GitHub release (IntellectusCorp/int2DDS, tag v<version>)
+#   publishes one archive per OS and architecture:
 #
-#       int2dds-ffi.h                       (C API header)
-#       int2dds-ffi.manifest.yaml           (per-arch file + sha256 + min_glibc)
-#       linux-x86_64/libint2dds_ffi.so      (amd64,  gnu)
-#       linux-x86_64-musl/libint2dds_ffi.so (amd64,  musl)
-#       linux-aarch64/libint2dds_ffi.so     (arm64,  gnu)
-#       linux-aarch64-musl/libint2dds_ffi.so(arm64,  musl)
-#       linux-armhf/libint2dds_ffi.so       (armv7)
+#       int2dds-<version>-linux-x86_64.tar.gz       (amd64,  gnu)
+#       int2dds-<version>-linux-x86_64-musl.tar.gz  (amd64,  musl)
+#       int2dds-<version>-linux-aarch64.tar.gz      (arm64,  gnu)
+#       int2dds-<version>-linux-aarch64-musl.tar.gz (arm64,  musl)
+#       int2dds-<version>-linux-armhf.tar.gz        (armv7,  gnu)
+#       int2dds-<version>-linux-armhf-musl.tar.gz   (armv7,  musl)
+#       int2dds-<version>-windows-x86_64.zip / -windows-aarch64.zip
+#       int2dds-<version>-macos-x86_64.tar.gz / -macos-arm64.tar.gz
 #
-#   This package downloads the tarball for the host OS, selects the artifact
-#   matching the host arch + libc, verifies its sha256 against the manifest,
-#   and installs it as include/ + lib/.
+#   Each archive unpacks to int2dds-<version>-<dist>/ with include/int2dds-ffi.h,
+#   the library in lib/ (the Windows DLL in bin/), and manifest.txt (dist,
+#   sha256 of the library, min_glibc).
+#
+#   This package downloads the archive matching the host OS, arch and libc,
+#   verifies the library's sha256 against the manifest, and installs it as
+#   include/ + lib/.
 # ============================================================================
 
 set(INT2DDS_FFI_VERSION "0.1.8")
 set(INT2DDS_FFI_RELEASE_TAG "v${INT2DDS_FFI_VERSION}")
 set(INT2DDS_FFI_BASE_URL
-  "https://github.com/IntellectusCorp/int2dds_ffi_vendor/releases/download/${INT2DDS_FFI_RELEASE_TAG}")
+  "https://github.com/IntellectusCorp/int2DDS/releases/download/${INT2DDS_FFI_RELEASE_TAG}")
 
 # glibc vs musl. ROS binaries target glibc; override with -DINT2DDS_FFI_LIBC=musl.
 set(INT2DDS_FFI_LIBC "gnu" CACHE STRING "C library variant of the prebuilt int2DDS FFI (gnu|musl)")
 
 # ----------------------------------------------------------------------------
-# Detect OS -> per-OS asset name
+# Detect OS -> archive extension
 # ----------------------------------------------------------------------------
 if(WIN32)
   set(_os "windows")
-  set(_asset "int2dds-ffi-${INT2DDS_FFI_VERSION}-windows.zip")
+  set(_ext ".zip")
 elseif(APPLE)
   set(_os "macos")
-  set(_asset "int2dds-ffi-${INT2DDS_FFI_VERSION}-macos.tar.gz")
+  set(_ext ".tar.gz")
 else()
   set(_os "linux")
-  set(_asset "int2dds-ffi-${INT2DDS_FFI_VERSION}-linux.tar.gz")
+  set(_ext ".tar.gz")
 endif()
 
 # ----------------------------------------------------------------------------
-# Detect architecture -> in-tarball subdirectory token
+# Detect architecture -> release dist token (<os>-<arch>[-musl])
 # ----------------------------------------------------------------------------
 string(TOLOWER "${CMAKE_SYSTEM_PROCESSOR}" _proc)
 if(_proc MATCHES "x86_64|amd64")
@@ -57,11 +62,13 @@ elseif(_proc MATCHES "armv7|armhf|arm")
 else()
   message(FATAL_ERROR "int2dds_ffi_vendor: unsupported architecture '${CMAKE_SYSTEM_PROCESSOR}'")
 endif()
+# The macOS archives call 64-bit ARM "arm64".
+if(APPLE AND _arch_token STREQUAL "aarch64")
+  set(_arch_token "arm64")
+endif()
 
-# armhf ships only a gnu build; everything else honours the libc selector.
-if(_arch_token STREQUAL "armhf")
-  set(_subdir "${_os}-${_arch_token}")
-elseif(INT2DDS_FFI_LIBC STREQUAL "musl")
+# Every Linux architecture, armhf included, has a gnu and a musl archive.
+if(INT2DDS_FFI_LIBC STREQUAL "musl")
   set(_subdir "${_os}-${_arch_token}-musl")
 else()
   set(_subdir "${_os}-${_arch_token}")
@@ -74,7 +81,13 @@ elseif(APPLE)
 else()
   set(_libname "libint2dds_ffi.so.${INT2DDS_FFI_VERSION}")
 endif()
-set(_member "${_subdir}/${_libname}")
+set(_asset "int2dds-${INT2DDS_FFI_VERSION}-${_subdir}${_ext}")
+set(_top "int2dds-${INT2DDS_FFI_VERSION}-${_subdir}")
+if(WIN32)
+  set(_member "${_top}/bin/${_libname}")
+else()
+  set(_member "${_top}/lib/${_libname}")
+endif()
 
 # ----------------------------------------------------------------------------
 # Download + extract at configure time
@@ -109,12 +122,14 @@ if(NOT _extract_result EQUAL 0)
   message(FATAL_ERROR "int2dds_ffi_vendor: failed to extract ${_asset} (${_extract_result})")
 endif()
 
-set(_header "${_extract_dir}/int2dds-ffi.h")
+set(_header "${_extract_dir}/${_top}/include/int2dds-ffi.h")
 set(_lib "${_extract_dir}/${_member}")
-set(_manifest "${_extract_dir}/int2dds-ffi.manifest.yaml")
+set(_manifest "${_extract_dir}/${_top}/manifest.txt")
 
 if(NOT EXISTS "${_header}")
-  message(FATAL_ERROR "int2dds_ffi_vendor: missing int2dds-ffi.h in ${_asset}")
+  message(FATAL_ERROR
+    "int2dds_ffi_vendor: ${_top}/include/int2dds-ffi.h not found in ${_tarball}\n"
+    "  (host: ${_subdir}; an archive for another OS or architecture has a different top folder)")
 endif()
 if(NOT EXISTS "${_lib}")
   message(FATAL_ERROR
@@ -126,19 +141,21 @@ endif()
 # Verify the selected library against the sha256 recorded in the manifest
 # ----------------------------------------------------------------------------
 if(EXISTS "${_manifest}")
+  # One artifact per archive: `dist:` names it, `sha256:` is the library's hash.
   file(STRINGS "${_manifest}" _manifest_lines)
   set(_expected_sha "")
-  set(_seen_member FALSE)
+  set(_manifest_dist "")
   foreach(_line IN LISTS _manifest_lines)
-    if(_line MATCHES "file:[ \t]*${_member}[ \t]*$")
-      set(_seen_member TRUE)
-    elseif(_seen_member AND _line MATCHES "sha256:[ \t]*([0-9a-fA-F]+)")
+    if(_line MATCHES "^dist:[ \t]*([^ \t]+)")
+      set(_manifest_dist "${CMAKE_MATCH_1}")
+    elseif(_line MATCHES "^sha256:[ \t]*([0-9a-fA-F]+)")
       set(_expected_sha "${CMAKE_MATCH_1}")
-      break()
-    elseif(_seen_member AND _line MATCHES "file:")
-      break()  # moved to the next artifact without finding a sha
     endif()
   endforeach()
+  if(NOT _manifest_dist STREQUAL "" AND NOT _manifest_dist STREQUAL _subdir)
+    message(FATAL_ERROR
+      "int2dds_ffi_vendor: ${_asset} carries '${_manifest_dist}', expected '${_subdir}'")
+  endif()
 
   if(_expected_sha STREQUAL "")
     message(WARNING "int2dds_ffi_vendor: no sha256 for '${_member}' in manifest; skipping verification.")
@@ -164,14 +181,15 @@ install(FILES "${_header}" DESTINATION "include")
 if(WIN32)
   # The DLL goes to bin/ (found through PATH at run time), the import library to lib/.
   install(FILES "${_lib}" DESTINATION "bin")
-  set(_implib "${_extract_dir}/${_subdir}/int2dds_ffi.lib")
+  # The release names the import library int2dds_ffi.dll.lib; the extras file imports int2dds_ffi.lib.
+  set(_implib "${_extract_dir}/${_top}/lib/int2dds_ffi.dll.lib")
   if(EXISTS "${_implib}")
-    install(FILES "${_implib}" DESTINATION "lib")
+    install(FILES "${_implib}" DESTINATION "lib" RENAME "int2dds_ffi.lib")
   endif()
 elseif(APPLE)
   install(FILES "${_lib}" DESTINATION "lib")
 else()
-  file(GLOB _libfiles "${_extract_dir}/${_subdir}/libint2dds_ffi.so*")
+  file(GLOB _libfiles "${_extract_dir}/${_top}/lib/libint2dds_ffi.so*")
   install(FILES ${_libfiles} DESTINATION "lib")
 endif()
 
