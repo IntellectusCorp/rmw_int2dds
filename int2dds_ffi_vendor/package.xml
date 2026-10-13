@@ -13,8 +13,8 @@
 
   <license>Apache-2.0</license>
 
-  <!-- The sources live in rmw_int2dds; only the prebuilt FFI tarballs are still
-       published on the int2dds_ffi_vendor release page (see CMakeLists.txt). -->
+  <!-- The sources live in rmw_int2dds; the prebuilt FFI archives are downloaded
+       from the int2DDS release page (see CMakeLists.txt). -->
   <url type="repository">https://github.com/IntellectusCorp/rmw_int2dds</url>
   <url type="bugtracker">https://github.com/IntellectusCorp/rmw_int2dds/issues</url>
   <url type="website">https://github.com/IntellectusCorp/int2DDS</url>
