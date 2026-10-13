@@ -35,8 +35,7 @@ current support status of each policy.
        ``MANUAL_BY_PARTICIPANT``
    * - Liveliness lease duration
      - Liveliness lease_duration
-     - Supported (finite and infinite leases; compatibility verified against
-       other vendors)
+     - Supported (finite and infinite leases)
    * - System default policies
      - n/a
      - Resolved to concrete defaults (RELIABLE / VOLATILE / KEEP_LAST 10 /
@@ -55,7 +54,4 @@ Verification evidence (2026-06-11, Jazzy)
   durability late-joiner, history/depth drain, lifespan expiry,
   liveliness AUTOMATIC and MANUAL_BY_TOPIC — all OK.
 * QoS *compatibility* rules: ``rmw_qos_profile_check_compatible`` delegates to
-  ``rmw_dds_common`` (identical verdicts to the reference RMWs), and
-  cross-vendor pub/sub interop with rmw_fastrtps_cpp and rmw_cyclonedds_cpp
-  passes 8/8 each, which exercises reliability/durability/liveliness
-  compatibility on the wire.
+  ``rmw_dds_common``.
