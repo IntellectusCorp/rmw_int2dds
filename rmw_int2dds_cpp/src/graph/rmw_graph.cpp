@@ -361,9 +361,9 @@ static rmw_qos_liveliness_policy_t core_liveliness_to_rmw(int32_t kind)
 // Builds the rmw QoS profile reported by get_*_info_by_topic from the discovered
 // endpoint's propagated QoS. Reliability/durability/liveliness and the deadline,
 // lifespan and liveliness-lease durations are taken from DDS discovery; history and
-// depth are not carried over the wire so they stay at the profile defaults, the same
-// as the reference RMWs. Durations default to infinite (the sentinel) when a getter
-// is unavailable, matching a default-QoS endpoint.
+// depth are not carried over the wire so they stay at the profile defaults.
+// Durations default to infinite (the sentinel) when a getter is unavailable,
+// matching a default-QoS endpoint.
 static rmw_qos_profile_t build_remote_qos(
   int32_t reliability_kind, int32_t durability_kind, int32_t liveliness_kind,
   int32_t lease_sec, uint32_t lease_nsec, int32_t deadline_sec, uint32_t deadline_nsec,
@@ -1663,7 +1663,7 @@ static rmw_ret_t get_service_endpoints_info(
   }
   if (no_mangle) {
     // The DDS topics backing a service only exist in mangled form, so an
-    // unmangled lookup has nothing to name (same contract as rmw_fastrtps).
+    // unmangled lookup has nothing to name.
     RMW_SET_ERROR_MSG(
       "'no_mangle' is not supported for services; use "
       "rmw_get_publishers_info_by_topic / rmw_get_subscriptions_info_by_topic "

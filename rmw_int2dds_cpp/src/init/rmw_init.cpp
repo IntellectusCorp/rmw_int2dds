@@ -36,6 +36,7 @@
 #endif
 
 #include "rcutils/allocator.h"
+#include "rcutils/env.h"
 #include "rcutils/strdup.h"
 
 #include "int2dds-ffi.h"  // NOLINT(build/include_subdir): vendored FFI header
@@ -238,6 +239,18 @@ acquire_context_resources(ContextData * context_data, const char * enclave)
 
 }  // namespace rmw_int2dds_cpp
 
+namespace
+{
+// Seed an int2DDS env default unless the user already set it. A failure keeps
+// the core's own default, so the error state is cleared instead of reported.
+void set_env_default(const char * name, const char * value)
+{
+  if (std::getenv(name) == nullptr && !rcutils_set_env(name, value)) {
+    rcutils_reset_error();
+  }
+}
+}  // namespace
+
 extern "C"
 {
 rmw_ret_t
@@ -372,16 +385,16 @@ rmw_init(const rmw_init_options_t * options, rmw_context_t * context)
   // this RMW, unless INT2DDS_DATA_FRAG_SIZE is already set. The int2dds core reads
   // this env when a writer's DataFrag QoS is unset; seeding it here scopes the 1344
   // default to the ROS/RMW path without changing the core's own default (65000).
-  // overwrite=0 preserves any user-provided value.
-  setenv("INT2DDS_DATA_FRAG_SIZE", "1344", 0);
-  setenv("INT2DDS_MAX_MESSAGE_SIZE", "13440", 0);
+  // set_env_default() preserves any user-provided value.
+  set_env_default("INT2DDS_DATA_FRAG_SIZE", "1344");
+  set_env_default("INT2DDS_MAX_MESSAGE_SIZE", "13440");
   // Seed a large UDP socket buffer for the ROS/RMW path. The core's
   // default is small, so under high-rate / large-message reliable traffic the
   // kernel receive buffer overflows and drops fragments, which surfaces as lost
-  // samples even under RELIABLE. overwrite=0 preserves a user-provided value.
+  // samples even under RELIABLE. set_env_default() preserves a user-provided value.
   // NOTE: the kernel caps this at net.core.rmem_max/wmem_max, so deployments
   // must also raise those (standard DDS requirement) for the full effect.
-  setenv("INT2DDS_UDP_SOCKET_BUFFER", "8388608", 0);
+  set_env_default("INT2DDS_UDP_SOCKET_BUFFER", "8388608");
   // Create context data
   auto * context_data = new (std::nothrow) rmw_int2dds_cpp::ContextData();
   if (context_data == nullptr) {
