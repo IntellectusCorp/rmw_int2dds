@@ -128,10 +128,8 @@ struct ContextData
 ///
 /// rmw_destroy_node releases these once the last node is gone (a client library
 /// may keep the context alive, so rmw_context_fini may never run). rmw_create_node
-/// calls this again to bring them back, mirroring rmw_fastrtps, where
-/// increment_context_impl_ref_count() recreates what
-/// decrement_context_impl_ref_count() released. Rolls back on failure and leaves
-/// every pointer null.
+/// calls this again to bring them back. Rolls back on failure and leaves every
+/// pointer null.
 ///
 /// \return RMW_RET_OK on success, otherwise the error is already set.
 rmw_ret_t
@@ -203,8 +201,7 @@ struct PublisherData
   // EventData objects created by rmw_publisher_event_init for this
   // publisher. rcl/rclpy never call rmw_event_fini (measured: fini count 0), so
   // unless the entity owns them, every create/destroy churn leaks one EventData
-  // per event type (int2dds-specific; the reference RMW ties event data to the
-  // entity likewise). Guarded by event_mutex; freed in rmw_destroy_publisher.
+  // per event type (int2dds-specific). Guarded by event_mutex; freed in rmw_destroy_publisher.
   std::mutex event_mutex;
   std::vector<EventData *> events;
 };
@@ -267,8 +264,7 @@ struct SubscriptionData
   // EventData objects created by rmw_subscription_event_init for this
   // subscription. rcl/rclpy never call rmw_event_fini (measured: fini count 0),
   // so unless the entity owns them, every create/destroy churn leaks one
-  // EventData per event type (int2dds-specific; the reference RMW ties event
-  // data to the entity likewise). Guarded by event_mutex; freed in
+  // EventData per event type (int2dds-specific). Guarded by event_mutex; freed in
   // rmw_destroy_subscription.
   std::mutex event_mutex;
   std::vector<EventData *> events;
