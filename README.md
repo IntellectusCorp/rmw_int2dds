@@ -37,11 +37,11 @@ int2DDS as its middleware via `RMW_IMPLEMENTATION=rmw_int2dds_cpp`.
 | RHEL 10 | Verified |  |  |
 | macOS | Verified |  |  |
 | Debian 13 (Trixie) | Verified | Verified | Verified |
-| OpenEmbedded / Yocto | Verified | Verified | Not supported |
+| OpenEmbedded / Yocto | Verified | Verified | Verified |
 
 - Windows: verified on Windows 11 with Visual Studio 2022. See [Windows and macOS](#windows-and-macos).
 - macOS: verified on macOS 15.
-- OpenEmbedded / Yocto: verified with a local layer that adds the `rmw_int2dds` recipes. arm32 does not build: the ROS 2 message packages fail before `rmw_int2dds` is reached.
+- OpenEmbedded / Yocto: verified with a local layer that adds the `rmw_int2dds` recipes. arm32 needs one change in meta-ros: in `meta-ros2/classes/ros_ament_cmake.bbclass`, replace `inherit cmake python3native` with `inherit cmake python3targetconfig`. Without it, the ROS 2 message packages fail with a `LONG_BIT` error before `rmw_int2dds` is reached ([ros/meta-ros#1205](https://github.com/ros/meta-ros/issues/1205), [fix](https://github.com/ros/meta-ros/issues/1205#issuecomment-2298233842)). Boards running an older kernel also need `OLDEST_KERNEL` set to that kernel (tested on NanoPi, kernel 4.14: `OLDEST_KERNEL = "4.14"`).
 
 ## Installation
 
