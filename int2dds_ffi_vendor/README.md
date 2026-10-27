@@ -44,8 +44,8 @@ int2dds-<version>-linux-x86_64.tar.gz
     ├── include/int2dds-ffi.h                  # C API header
     ├── lib/
     │   ├── libint2dds_ffi.so.<version>        #   real file
-    │   ├── libint2dds_ffi.so.0 -> .so.<version>  # SONAME
-    │   └── libint2dds_ffi.so   -> .so.0       #   linker name
+    │   ├── libint2dds_ffi.so.1 -> .so.<version>  # SONAME
+    │   └── libint2dds_ffi.so   -> .so.1       #   linker name
     ├── manifest.txt                           # dist + sha256 + soname + min_glibc
     └── LICENSE
 ```
@@ -57,13 +57,13 @@ On Windows the DLL is `bin/int2dds_ffi.dll` and the import library
 
 ```yaml
 name: int2dds
-version: "0.1.8"
+version: "1.0.0"
 api_header: int2dds-ffi.h
 license: Apache-2.0
 triple: x86_64-unknown-linux-gnu
 dist: linux-x86_64
 sha256: <hex>
-soname: libint2dds_ffi.so.0
+soname: libint2dds_ffi.so.1
 min_glibc: "2.28"
 ```
 
@@ -89,7 +89,7 @@ int2DDS release archive for the host, or one with the same layout:
 
 ```bash
 colcon build --cmake-args \
-  -DINT2DDS_FFI_TARBALL=/path/to/int2dds-0.1.8-linux-x86_64.tar.gz
+  -DINT2DDS_FFI_TARBALL=/path/to/int2dds-1.0.0-linux-x86_64.tar.gz
 ```
 
 Two reasons to reach for it. The obvious one is offline builds. The other is

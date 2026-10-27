@@ -2,6 +2,20 @@
 Changelog for package int2dds_ffi_vendor
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+1.0.0 (2026-10-27)
+------------------
+* Vendor the int2DDS FFI 1.0.0 release assets in place of 0.1.8. The artifacts
+  are a fresh build, so the sha256 of every artifact moved.
+* The soname moved from ``libint2dds_ffi.so.0`` to ``libint2dds_ffi.so.1``;
+  anything linked against 0.1.8 needs a rebuild.
+* Fetch one archive per OS and architecture (``int2dds-<version>-<dist>``)
+  from the int2DDS release page in place of the per-OS bundle from the
+  int2dds_ffi_vendor release page. The manifest's ``dist:`` is checked against
+  the selected archive, and every Linux architecture, ``armhf`` included, has
+  a musl archive.
+* Install the Windows DLL to ``bin/`` and the macOS dylib to ``lib/``.
+* Contributors: Intellectus Corp.
+
 0.1.8 (2026-10-07)
 ------------------
 * Vendor the int2DDS FFI 0.1.8 release assets in place of 0.1.7. The artifacts
