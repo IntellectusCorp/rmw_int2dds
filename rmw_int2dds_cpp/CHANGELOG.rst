@@ -2,6 +2,21 @@
 Changelog for package rmw_int2dds_cpp
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+1.0.0 (2026-10-27)
+------------------
+* Build against int2DDS FFI 1.0.0, up from 0.1.8. The header change is
+  additive (54 new entry points, 5 new macros, one new opaque type); every
+  entry point this package calls kept its signature, so no call site changed.
+  The library soname moved to ``libint2dds_ffi.so.1``.
+* Set the int2DDS environment defaults and log levels through
+  ``rcutils_set_env`` instead of ``setenv``.
+* Link the ``rmw_dds_common::rmw_dds_common_library`` target directly instead
+  of pulling ``rmw_dds_common`` in through ``ament_target_dependencies``.
+* Declare ``ament_cmake_ros`` as a ``buildtool_depend``.
+* Refresh the README and drop references to other RMW implementations from
+  comments and docs.
+* Contributors: Intellectus Corp.
+
 0.1.8 (2026-10-07)
 ------------------
 * Build against int2DDS FFI 0.1.8, up from 0.1.7.
