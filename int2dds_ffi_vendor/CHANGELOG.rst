@@ -2,6 +2,15 @@
 Changelog for package int2dds_ffi_vendor
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+1.0.1 (2026-11-03)
+------------------
+* Vendor the int2DDS FFI 1.0.1 release assets in place of 1.0.0. The artifacts
+  are a fresh build, so the sha256 of every artifact moved. The published
+  ``int2dds-ffi.h`` is identical to the one shipped with 1.0.0.
+* The soname is unchanged at ``libint2dds_ffi.so.1``, and so is the glibc
+  floor (2.28 on x86_64, aarch64 and armhf).
+* Contributors: Intellectus Corp.
+
 1.0.0 (2026-10-27)
 ------------------
 * Vendor the int2DDS FFI 1.0.0 release assets in place of 0.1.8. The artifacts
