@@ -57,7 +57,7 @@ On Windows the DLL is `bin/int2dds_ffi.dll` and the import library
 
 ```yaml
 name: int2dds
-version: "1.0.0"
+version: "1.0.1"
 api_header: int2dds-ffi.h
 license: Apache-2.0
 triple: x86_64-unknown-linux-gnu
