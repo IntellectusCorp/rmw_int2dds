@@ -17,7 +17,7 @@ packages in the [ROS 2 Developer Guide](https://docs.ros.org/en/humble/The-ROS2-
 
 ### Version Stability [1.ii]
 
-`rmw_int2dds_cpp` is not yet at a stable version (`>= 1.0.0`). The current
+`rmw_int2dds_cpp` is at a stable version, i.e. `>= 1.0.0`. The current
 version can be found in its [package.xml](package.xml), and its change history
 can be found in its [CHANGELOG](CHANGELOG.rst).
 
