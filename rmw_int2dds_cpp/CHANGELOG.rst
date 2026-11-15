@@ -2,6 +2,14 @@
 Changelog for package rmw_int2dds_cpp
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+Forthcoming
+-----------
+* Keep the wait readiness check non-consuming for
+  ``ignore_local_publications`` subscriptions. It used to read and take the
+  front samples to drop same-node ones; the read marked samples as read, so
+  the following take removed a remote sample instead or left it unread, and
+  remote data was lost. Same-node samples are now dropped only on take.
+
 1.0.1 (2026-11-03)
 ------------------
 * Build against int2DDS FFI 1.0.1, up from 1.0.0. The FFI header is identical
