@@ -57,7 +57,7 @@ On Windows the DLL is `bin/int2dds_ffi.dll` and the import library
 
 ```yaml
 name: int2dds
-version: "1.0.0"
+version: "1.0.1"
 api_header: int2dds-ffi.h
 license: Apache-2.0
 triple: x86_64-unknown-linux-gnu
@@ -89,7 +89,7 @@ int2DDS release archive for the host, or one with the same layout:
 
 ```bash
 colcon build --cmake-args \
-  -DINT2DDS_FFI_TARBALL=/path/to/int2dds-1.0.0-linux-x86_64.tar.gz
+  -DINT2DDS_FFI_TARBALL=/path/to/int2dds-1.0.1-linux-x86_64.tar.gz
 ```
 
 Two reasons to reach for it. The obvious one is offline builds. The other is

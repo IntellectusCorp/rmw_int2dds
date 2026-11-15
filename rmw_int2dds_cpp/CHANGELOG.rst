@@ -2,6 +2,14 @@
 Changelog for package rmw_int2dds_cpp
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+1.0.1 (2026-11-03)
+------------------
+* Build against int2DDS FFI 1.0.1, up from 1.0.0. The FFI header is identical
+  to 1.0.0, so no call site changed; the library soname stays
+  ``libint2dds_ffi.so.1``.
+* No other source changes.
+* Contributors: Intellectus Corp.
+
 1.0.0 (2026-10-27)
 ------------------
 * Build against int2DDS FFI 1.0.0, up from 0.1.8. The header change is
